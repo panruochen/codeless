@@ -1,0 +1,128 @@
+#!/usr/bin/env python
+
+import re
+import os
+import sys
+import subprocess
+import getopt
+import readline
+
+# compiler
+Y_CC    = None
+# PXCA tool
+Y_PXCA  = None
+# make command
+Y_MAKE  = None
+TARGET_DIRECTORY = ''
+
+#  Run shell commands and get outputs into a string
+def run_command(command):
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    return out.decode("utf-8")
+
+#  Run shell commands and print real time outputs to the console
+def run_in_shell(commands, _exec = None):
+	process = subprocess.Popen(commands, bufsize = 1, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, executable=_exec)
+	while process.poll() is None:
+		line = process.stdout.readline()
+		if line:
+			sys.stdout.write(line.decode('utf-8'))
+			sys.stdout.flush()
+	if process.returncode:
+		null = None
+		
+
+try:
+    opts, args = getopt.gnu_getopt(sys.argv[1:], "d:", (["cc=",
+        "xcc=", "make="]))
+except getopt.GetoptError as err:
+    print(str(err)) # will print something like "option -a not recognized"
+    sys.exit(2)
+
+for o, a in opts:
+	if o == "-d":
+		TARGET_DIRECTORY = a
+	elif o == '--cc':
+		Y_CC = a
+	elif o == '--xcc':
+		Y_PXCA =  os.getcwd() + '/' + a
+	elif o == '--make':
+		Y_MAKE = a
+	else:
+		print("option: ", o)
+		assert False, "unhandled option"
+
+if Y_CC == None:
+	Y_CC = input("Select compiler: ")
+if Y_PXCA == None:
+	Y_PXCA = input("Select xcc tool: ")
+	Y_PXCA = os.getcwd() + '/' + Y_PXCA
+if Y_MAKE == None:
+	Y_MAKE = input("Input commands for `make`: ")
+
+sys_includes = ''
+sys_defines  = ''
+if Y_CC != None:
+	if re.search(r'-?gcc', Y_CC):
+		flag = 0
+		for line in run_command('cpp -v 2>&1 /dev/null').split('\n'):
+			words = line.split()
+			if words[0] == '#include' and words[1] == '<...>':
+				flag = 1
+			elif flag:
+				if line == 'End of search list.':
+					break
+				else:
+					sys_includes += '-I ' + words[0] + ' \\\n'
+		sys_defines = run_command('cpp -dM /dev/null')
+	elif Y_CC == 'armcc':
+		sys_defines  = '''#define __STDC__ 1
+#define __STDC_VERSION__ 199409L
+#define __EDG__ 1
+#define __EDG_VERSION__ 310
+#define __sizeof_int 4
+#define __sizeof_long 4
+#define __sizeof_ptr 4
+#define __ARMCC_VERSION 410894
+#define __TARGET_CPU_ARM7TDMI 1
+#define __TARGET_FPU_SOFTVFP 1
+#define __CC_ARM 1
+#define __arm 1
+#define __arm__ 1
+#define __TARGET_ARCH_4T 1
+#define __TARGET_ARCH_ARM 4
+#define __TARGET_ARCH_THUMB 1
+#define __TARGET_FEATURE_HALFWORD 1
+#define __TARGET_FEATURE_THUMB 1
+#define __TARGET_FEATURE_MULTIPLY 1
+#define __TARGET_FEATURE_EXTENSION_REGISTER_COUNT 0
+#define __OPTIMISE_SPACE 1
+#define __OPT_SMALL_ASSERT 1
+#define __OPTIMISE_LEVEL 2
+#define __SOFTFP__ 1
+'''
+
+final_commands = ''
+final_commands += 'function '
+final_commands += Y_CC
+final_commands += '()\n{\n    '
+final_commands += Y_PXCA
+final_commands += """  -y-preprocess -y-debug=0 -y-print-dependency -y-in-place=.bak \\
+    -y-get-macros='"""
+final_commands += sys_defines
+final_commands += "' \\\n"
+final_commands += sys_includes
+final_commands += ' $* || return $?\n'
+final_commands += '    ' + run_command('which ' + Y_CC).rstrip('\r\n')
+final_commands += ' $*\n}\n'
+final_commands += 'export -f ' + Y_CC + '\n' 
+final_commands += Y_MAKE + '\n' 
+
+
+print(final_commands)
+run_in_shell(final_commands, '/bin/bash')
+
+#print(sys_includes)
+#print(sys_defines)
+

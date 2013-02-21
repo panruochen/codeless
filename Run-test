@@ -1,0 +1,25 @@
+#!/bin/sh
+
+set -e
+
+TARGET=make-3.81
+
+if [ -d ${TARGET} ]; then
+	rm -rf ${TARGET}/
+fi
+
+tar xfj ${TARGET}.tar.bz2
+
+cp pxcc.exe ${TARGET}/
+
+cd ${TARGET}
+
+./configure
+make
+objcopy -O binary make.exe yy-1.bin
+
+make clean
+../run-make --cc=gcc --xcc=./pxcc.exe --make='make'
+objcopy -O binary make.exe yy-2.bin
+
+

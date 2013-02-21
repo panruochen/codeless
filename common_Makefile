@@ -1,0 +1,252 @@
+###############################################################################
+#
+# A FLEXIBLE MAKEFILE TEMPLATE
+#
+# The purpose of implementing this script is help quickly deploy source code
+# tree during initial phase of development. It is designed to manage one whole
+# project from within one single makefile and to be easily adapted to
+# different directory hierarchy by simply setting user configurable variables.
+# This script is expected to be used with gcc toolchains on bash-compatible 
+# shell.
+# 
+# Author: Pan Ruochen <coderelease@163.com>
+# Date:   2012/10/10
+#
+###############################################################################
+
+#-----------------------------------------------------------------------------------------------------#
+# User configurable variables
+#
+# ====================================================================================================
+# CROSS_COMPILE:  The cross compiling perfix for gcc.
+# DEFINES:        The compiler flags for macro definitions.
+# EXTRA_CFLAGS:   Any other compiler flags.
+# ====================================================================================================
+# inc-y:          Header include paths
+# src-y:          Sources. The items ending with a trailing / are regarded as directories, the others
+#                 are regareded as files. The files with specified suffixes in those directories will
+#                 be automatically involved in compilation.
+# EXCLUDE_FILES:  The files that are not included during compilation.
+# OBJECT_DIR:     The directory where object files are output.
+# LD_SCRIPT:      The explicit linker script for linking.
+# LIBS:           The libraries for linking.
+# LDFLAGS:        All other linker flags.
+# ====================================================================================================
+# STRIP_UNUSED:   Remove all unreferenced functions and data during linking.
+# SOURCE_SUFFIXES:The suffixes of source files.
+# OBJECT_SUFFIX:  The suffix of object files.
+# DEPEND_SUFFIX:  The suffix of dependency files.
+# TARGET_TYPE:    The target type which can be application, shared object, archive library etc.
+# TARGET:         The path name of the final target.
+# IGNORE_ME:      The changes of this script will not cause remaking of any target.
+# CENTRALIZED_SINGLE_DEPEND_FILE:  Use one single dependency file instead of 
+#                                  generating one dependency file for each source file.
+# TARGET_DEPENDS: The dependent targets by the final target.
+#-----------------------------------------------------------------------------------------------------#
+
+#****************************************************************************#
+#  PART II: FUNCTIONALITY IMPLEMENTATIONS                                    #
+#****************************************************************************#
+O := $(if $(OBJECT_SUFFIX),$(OBJECT_SUFFIX),o)
+D := $(if $(DEPEND_SUFFIX),$(DEPEND_SUFFIX),d)
+
+def_suffixes := c cpp cc cxx S s
+
+GCC    := $(CROSS_COMPILE)gcc
+G++    := $(CROSS_COMPILE)g++
+
+src-d = $(filter %/,$(src-y))
+src-f = $(foreach i,$(SOURCE_SUFFIXES),$(filter %.$i,$(src-y)))
+
+is_equal = $(if $(filter $1,$2),$(filter $2,$1))
+
+objdir := $(shell echo $(OBJECT_DIR)|sed -e 's:\(\./*\)*::g')
+ifeq ($(objdir),)
+objdir       := ./
+else
+objdir       := $(objdir)/
+have_objdir  := y
+endif
+
+## Combine compiler flags togather.
+CFLAGS   = $(foreach i,$(inc-y),-I$i) $(EXTRA_CFLAGS) $(DEFINES)
+
+## Output file types:
+##  app:  application
+##  ar:   static library
+##  so:   shared object
+##  bin:  raw binary
+TARGET_TYPE := $(strip $(TARGET_TYPE))
+ifeq ($(filter $(TARGET_TYPE),so ar app bin),)
+$(error Unknown TARGET_TYPE `$(TARGET_TYPE)')
+endif
+
+ifeq ($(TARGET_TYPE),so)
+no-fpic := $(shell $(GCC) -fpic -xc -E /dev/null 2>&1 >/dev/null)
+CFLAGS  += $(if $(no-fpic),,-fpic) -shared
+LDFLAGS += -shared
+endif
+ifneq ($(STRIP_UNUSED),)
+CFLAGS  += -ffunction-sections -fdata-sections
+LDFLAGS += --gc-sections
+endif
+
+ifeq ($(CENTRALIZED_SINGLE_DEPEND_FILE),)
+CFLAGS += -MMD -MF $$@.$(D) -MT $$@
+else
+single_depend_file := $(objdir)depend
+endif
+
+g_makefile_list = $(if $(IGNORE_ME),,$(MAKEFILE_LIST))
+
+#--------------------------------------------------#
+# Exclude user-specified files from source list.   #
+#  $1 -- The sources list                          #
+#--------------------------------------------------#
+exclude = $(filter-out $(EXCLUDE_FILES),$1)
+
+#----------------------------------------------------------#
+# List files with specified suffix inside the directory.   #
+#  $1 -- The directory                                     #
+#  $2 -- The suffix                                        #
+#----------------------------------------------------------#
+ls = $(wildcard $1*.$2)
+
+
+#---------------------------------------------#
+# Replace the specified suffixes with $(O).   #
+#  $1 -- The file names                       #
+#  $2 -- The suffixes                         #
+#---------------------------------------------#
+x2o = $(strip $(foreach i,$2,$(patsubst %.$i,%.$O,$(filter %.$i,$1))))
+
+
+#-------------------------------------------------------------------#
+# Replace the pattern .. with !! in the path names in order that    #
+# no directories are out of the object directory                    #
+#  $1 -- The path names                                             #
+#-------------------------------------------------------------------#
+parent_dir_map = $(if $(have_objdir),$(subst ..,!!,$1),$1)
+
+
+#------------------------------------------------------------------#
+# Set up static pattern rules for sources with specified suffixes  #
+# in specified directories.                                        #
+#  $1 -- Source directories                                        #
+#  $2 -- Source suffixes                                           #
+#  $3 -- Equal to $(call ls $1,$2)                                 #
+#------------------------------------------------------------------#
+static_pattern_rules = $(if $3,$(call rule_static_pattern,$(patsubst %.$2,$(objdir)%.$O,$3),$1,$2))
+
+
+#------------------------------------#
+# Command to make directory          #
+#  $1 -- The directory to be made    #
+#------------------------------------#
+cmd_make_directory = if test ! -d "$1"; then echo MKDIR "$1" && mkdir -p "$1"; fi;
+
+cmd_compile = $(GCC) -I$$(dir $$<) $(CFLAGS) -c -o $$@ $$<
+
+#------------------------------------------------------------------#
+#  Static pattern rule                                             #
+#  $1 -- Targets                                                   #
+#  $1 -- Source directories                                        #
+#  $2 -- Source suffixes                                           #
+#------------------------------------------------------------------#
+define rule_static_pattern
+$(call parent_dir_map,$1): $(call parent_dir_map,$(objdir)$2%.$(O)): $2%.$3 $(g_makefile_list)
+	$(cmd_compile)	
+
+endef
+
+
+#--------------------------------------------------------------#
+#  Ordinary rule                                               #
+#  $1 -- The Target                                            #
+#  $2 -- The prerequisite                                      #
+#--------------------------------------------------------------#
+define rule_ordinary
+$(call parent_dir_map,$2): $1 $(g_makefile_list)
+	$(cmd_compile)	
+
+endef
+
+#--------------------------------------------------------#
+# Make sure the default target "all" is the first target
+#--------------------------------------------------------#
+PHONY = all clean distclean make_sub_dirs
+all: make_sub_dirs $(TARGET)
+
+#----------------------------------------------------#
+# Dynamic Targets
+#----------------------------------------------------#
+$(eval $(foreach i,\
+    $(sort $(src-d)),\
+    $(foreach j,$(SOURCE_SUFFIXES),$(call static_pattern_rules,$i,$j,$(call exclude,$(call ls,$i,$j)))))\
+    $(foreach i,$(call exclude,$(sort $(src-f))),$(call rule_ordinary,$i,$(objdir)$(call x2o,$i,$(def_suffixes)))))
+
+
+#-------------------------------------#
+# Get the list of all source files    #
+#-------------------------------------#
+srcs = $(call exclude,\
+	$(foreach i,$(SOURCE_SUFFIXES),\
+	$(foreach j,$(src-d),\
+	$(wildcard $j*.$i)) $(filter %.$i,$(src-f))))
+
+ifeq ($(strip $(srcs)),)
+$(error Empty source list! Please check both src-y and SOURCE_SUFFIXES are correctly set.)
+endif
+
+#-------------------------------------#
+# Get the list of all object files    #
+#-------------------------------------#
+objs = $(call parent_dir_map,$(addprefix $(objdir),$(call x2o,$(srcs),$(SOURCE_SUFFIXES))))
+
+#----------------------------------------------------#
+# Static Targets
+#----------------------------------------------------#
+make_sub_dirs:
+	$(call cmd_make_directory,$(dir $(TARGET)))
+	$(foreach i,$(call parent_dir_map,$(sort $(src-d) $(dir $(src-f)))),$(call cmd_make_directory,$(objdir)$i))
+
+ifneq ($(single_depend_file),)
+$(single_depend_file): $(srcs) $(filter-out $@,$(g_makefile_list)) $(objdir)
+	$(GCC) $(CFLAGS) -MM -MG $(srcs) | \
+sed 's#\([^[:space:]]\+\)\.$O:\s\([^[:space:]]\+\)\.\([^[:space:].]\+\s\?\)#$(objdir)\2.$O: \2.\3#g' > $@
+$(objdir): ; $(call cmd_make_directory,$(objdir))
+endif
+
+ifeq ($(TARGET_TYPE),ar)
+$(TARGET): AR := $(CROSS_COMPILE)ar
+$(TARGET): $(TARGET_DEPENDS) $(objs)
+	rm -f $@ && $(AR) rcvs $@ $(objs)
+else
+binary_target = $(filter bin,$(TARGET_TYPE))
+tmp_target_elf = $(if $(binary_target),$(basename $(TARGET)).elf,$(TARGET))
+
+$(tmp_target_elf): LD = $(if $(binary_target),$(CROSS_COMPILE)ld,\
+	$(if $(foreach i,cpp cc cxx,$(filter %.$i,$(srcs))),$(G++),$(GCC)))
+$(tmp_target_elf): $(TARGET_DEPENDS) $(objs) $(LD_SCRIPT)
+	$(LD) $(LDFLAGS) $(if $(LD_SCRIPT),-T $(LD_SCRIPT)) $(objs) $(LIBS) -o $(tmp_target_elf)
+
+ifeq ($(TARGET_TYPE),bin)
+$(TARGET): $(tmp_target_elf)
+	$(CROSS_COMPILE)objcopy -O binary $(tmp_target_elf) $@
+	$(CROSS_COMPILE)objdump -d $(tmp_target_elf) > $(basename $(@F)).lst
+	$(CROSS_COMPILE)nm $(tmp_target_elf) | sort -k1 > $(basename $(@F)).map
+endif
+endif
+
+clean:
+	rm -rf $(filter-out ./,$(objdir)) $(TARGET) $(objs)
+distclean: clean
+	find -name '*.$O' -o -name '*.$D' | xargs rm -f
+	$(if $(single_depend_file),rm -f $(single_depend_file))
+print-%:
+	@echo $* = $($*)
+
+.DEFAULT_GOAL = all
+
+sinclude $(if $(filter all,$(if $(MAKECMDGOALS),$(MAKECMDGOALS),$(.DEFAULT_GOAL))), \
+$(if $(single_depend_file),$(single_depend_file),$(foreach i,$(objs),$i.$(D))))
