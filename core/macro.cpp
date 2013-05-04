@@ -65,7 +65,8 @@ static void expand_object_like_macro(TCC_CONTEXT *tc, TOKEN_STREAM& tstr, TOKEN_
 	minfo = __find(tc, ctok.id);
 	if(minfo == TCC_MACRO_UNDEF) {
 		debug_console << DML_ERROR << "Undefined macro " << id_to_symbol(tc->symtab, ctok.id) << TCC_DEBUG_CONSOLE::endl ;
-		THROW_EXCEPTION();
+//		THROW_EXCEPTION();
+		result.push_back(g_unevaluable_token);
 	} else if(minfo == NULL) {
 		if(!preprocess_mode)
 			result.push_back(g_unevaluable_token);

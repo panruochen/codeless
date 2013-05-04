@@ -441,7 +441,7 @@ int main(int argc, char *argv[])
 		"#define", "#undef", "#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif", "#include", "#include_next"
 	};
 	if(cl_info.contents.size() > 0) {
-		errmsg = parser.source_file_strip(tc, keywords, 2, &cl_info, NULL, NULL);
+		errmsg = parser.do_parse(tc, keywords, 2, &cl_info, NULL, NULL);
 		if(errmsg != NULL) {
 			fprintf(stderr, "Error on parsing command line\n");
 			return -2;
@@ -457,7 +457,7 @@ int main(int argc, char *argv[])
 			path = check_file(imacro_files[i].c_str(), true);
 			if( path == NULL || ! file.open(path) )
 				continue;
-			parser.source_file_strip(tc, keywords, 2, &file, NULL, NULL);
+			parser.do_parse(tc, keywords, 2, &file, NULL, NULL);
 			file.close();
 		}
 
@@ -516,7 +516,7 @@ int main(int argc, char *argv[])
 //		exit(2);
 
 		file.set_file(current_file);
-		errmsg = parser.source_file_strip(tc, keywords, COUNT_OF(keywords), &file, tmpfile, depf);
+		errmsg = parser.do_parse(tc, keywords, COUNT_OF(keywords), &file, tmpfile, depf);
 //		debug_console.macro_table_dump();
 		if(errmsg == 0) {
 			if(suffix != NULL) {

@@ -516,7 +516,7 @@ handle_if_branch:
 					/*handle_define(tc, tokens)*/;
 				else if(preprocessor == SSID_SHARP_UNDEF)
 					handle_undef(tc, tokens[0]);
-				else if( preprocessor == SSID_SHARP_INCLUDE || preprocessor == SSID_SHARP_INCLUDE_NEXT ) {
+				else if( preprocess_mode && (preprocessor == SSID_SHARP_INCLUDE || preprocessor == SSID_SHARP_INCLUDE_NEXT) ) {
 					CC_STRING tmp;
 					const char *path;
 					char style;
@@ -550,14 +550,12 @@ handle_if_branch:
 							current_file = file;
 						}
 					} else {
-						if( preprocess_mode ) {
-							last_error  = "No such include file: ";
-							last_error += (style == '>' ? '<' : '"') ;
-							last_error += tmp;
-							last_error += (char) style;
-							retval = last_error.c_str();
-							goto done;
-						}
+						last_error  = "No such include file: ";
+						last_error += (style == '>' ? '<' : '"') ;
+						last_error += tmp;
+						last_error += (char) style;
+						retval = last_error.c_str();
+						goto done;
 					}
 				}
 			}
@@ -1002,7 +1000,7 @@ error:
  *
  *  Returns a pointer to the error messages on failure, or nil on success.
  */
-const char *ConditionalParser::source_file_strip(TCC_CONTEXT *tc, const char **keywords, size_t num_keywords,
+const char *ConditionalParser::do_parse(TCC_CONTEXT *tc, const char **keywords, size_t num_keywords,
 	GENERIC_FILE *infile, const char *outfile, FILE *depf)
 {
 	int last_levels_num = 0;

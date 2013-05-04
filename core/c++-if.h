@@ -207,7 +207,7 @@ public:
 		have_output = true;
 	}
 	const char *split(sym_t id, const char *line, TOKEN_ARRAY& tokens);
-	const char *source_file_strip(TCC_CONTEXT *tc, const char **keywords, size_t num_keywords, GENERIC_FILE *file,
+	const char *do_parse(TCC_CONTEXT *tc, const char **keywords, size_t num_keywords, GENERIC_FILE *file,
 		const char *outfile, FILE *depf);
 };
 
