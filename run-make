@@ -57,7 +57,8 @@ if Y_CC == None:
 	Y_CC = input("Select compiler: ")
 if Y_PXCA == None:
 	Y_PXCA = input("Select xcc tool: ")
-	Y_PXCA = os.getcwd() + '/' + Y_PXCA
+	if Y_PXCA[0:1] != '/' :
+		Y_PXCA = os.getcwd() + '/' + Y_PXCA
 if Y_MAKE == None:
 	Y_MAKE = input("Input commands for `make`: ")
 
