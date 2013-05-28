@@ -13,6 +13,10 @@ Y_CC    = None
 Y_PXCA  = None
 # make command
 Y_MAKE  = None
+
+Y_DEP_FILE    = None
+Y_CFLAGS_FILE = None
+
 TARGET_DIRECTORY = ''
 
 #  Run shell commands and get outputs into a string
@@ -31,11 +35,14 @@ def run_in_shell(commands, _exec = None):
 			sys.stdout.flush()
 	if process.returncode:
 		null = None
-		
+
+def to_abs_path(x) :
+	if x[0:1] != '/' :
+		return os.getcwd() + '/' + x
+	return x
 
 try:
-    opts, args = getopt.gnu_getopt(sys.argv[1:], "d:", (["cc=",
-        "xcc=", "make="]))
+    opts, args = getopt.gnu_getopt(sys.argv[1:], "d:", (["cc=", "xcc=", "make=", "print-cflags=", "print-dependencies="]))
 except getopt.GetoptError as err:
     print(str(err)) # will print something like "option -a not recognized"
     sys.exit(2)
@@ -46,9 +53,13 @@ for o, a in opts:
 	elif o == '--cc':
 		Y_CC = a
 	elif o == '--xcc':
-		Y_PXCA =  os.getcwd() + '/' + a
+		Y_PXCA = to_abs_path(a)
 	elif o == '--make':
 		Y_MAKE = a
+	elif o == '--print-cflags' :
+		Y_CFLAGS_FILE = to_abs_path(a)
+	elif o == '--print-dependencies' :
+		Y_DEP_FILE = to_abs_path(a)
 	else:
 		print("option: ", o)
 		assert False, "unhandled option"
@@ -57,8 +68,7 @@ if Y_CC == None:
 	Y_CC = input("Select compiler: ")
 if Y_PXCA == None:
 	Y_PXCA = input("Select xcc tool: ")
-	if Y_PXCA[0:1] != '/' :
-		Y_PXCA = os.getcwd() + '/' + Y_PXCA
+	Y_PXCA = to_abs_path(Y_PXCA)
 if Y_MAKE == None:
 	Y_MAKE = input("Input commands for `make`: ")
 
@@ -75,7 +85,7 @@ if Y_CC != None:
 				if line == 'End of search list.':
 					break
 				else:
-					sys_includes += '-I ' + words[0] + ' \\\n'
+					sys_includes += '-y-I ' + words[0] + ' \\\n'
 		sys_defines = run_command('cpp -dM /dev/null')
 	elif Y_CC == 'armcc':
 		sys_defines  = '''#define __STDC__ 1
@@ -108,18 +118,23 @@ final_commands = ''
 final_commands += 'function '
 final_commands += Y_CC
 final_commands += '()\n{\n    '
+if Y_CFLAGS_FILE != None :
+	final_commands += "{ echo $* | grep -o -e '-[DU][^[:space:]]*'; echo; } >> " + Y_CFLAGS_FILE + '\n'
 final_commands += Y_PXCA
-final_commands += """  -y-preprocess -y-debug=0 -y-print-dependency -y-in-place=.bak \\
-    -y-get-macros='"""
+if Y_DEP_FILE != None :
+	final_commands += ' -y-print-dependency=' + Y_DEP_FILE
+final_commands += """  -y-preprocess -y-debug=0 -y-in-place=.bak \\
+    -y-get-macros='"""  
 final_commands += sys_defines
 final_commands += "' \\\n"
 final_commands += sys_includes
 final_commands += ' $* || return $?\n'
 final_commands += '    ' + run_command('which ' + Y_CC).rstrip('\r\n')
 final_commands += ' $*\n}\n'
+if Y_CFLAGS_FILE != None :
+	final_commands += ': > ' + Y_CFLAGS_FILE + '\n'
 final_commands += 'export -f ' + Y_CC + '\n' 
 final_commands += Y_MAKE + '\n' 
-
 
 print(final_commands)
 run_in_shell(final_commands, '/bin/bash')
