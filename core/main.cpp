@@ -8,6 +8,7 @@
 
 #include <sys/types.h>
 #include <getopt.h>
+#include <libgen.h>
 
 #include "c++-if.h"
 
@@ -16,6 +17,20 @@
 
 #define PROGRAM_NAME  "pxcc"
 
+static char *__source_file_dir, *source_file_dir;
+
+static char *preprocess_option(char *line)
+{
+	char *p;
+	int n;
+
+	n = strlen(line);
+	if(n == 0)
+		return line;
+	for( p = n + line - 1; p >= line && (*p == '\r' || *p == '\n'); p--) *p = '\0';
+	for( p = line; (*p == ' ' || *p == '\t'); p++ ) ;
+	return p;
+}
 
 static int precedence_matrix_setup(TCC_CONTEXT *tc, int oprnum, const char **oprset, const char **matrix)
 {
@@ -158,8 +173,12 @@ const char *check_file(const char *filename, bool include_current_dir, bool incl
 	struct stat st;
 
 	count = 0;
-	if(include_current_dir && stat(filename, &st) == 0 ) {
-		path = filename;
+	path  = source_file_dir;
+	path += '/';
+	path += filename;
+//	if(include_current_dir && stat(filename, &st) == 0 ) {
+	if(include_current_dir && stat(path.c_str(), &st) == 0 ) {
+//		path = filename;
 		++count;
 		if( ! include_next )
 			return path.c_str();
@@ -176,7 +195,6 @@ const char *check_file(const char *filename, bool include_current_dir, bool incl
 				if( ! include_next || count == 2) {
 					if(in_sys_dir != NULL)
 						*in_sys_dir = (&dirs - __tcc_search_dirs);
-
 					return path.c_str();
 				}
 			}
@@ -307,6 +325,7 @@ int main(int argc, char *argv[])
 		C_OPTION_PRINT_DEPENDENCY,
 		C_OPTION_APPEND_DEPENDENCY,
 		C_OPTION_SOURCE,
+		C_OPTION_VIA,
 	};
 
 	TCC_CONTEXT tcc_context, *tc = &tcc_context;
@@ -334,6 +353,7 @@ int main(int argc, char *argv[])
 			{"include",  1, 0, 0},
 			{"imacros",  1, 0, C_OPTION_IMACROS},
 			{"isysroot", 1, 0, 0},
+			{"via",  1, 0, C_OPTION_VIA},
 /*--------------------------------------------------------------------*/
 			{"y-debug",    1, 0, C_OPTION_DEBUG},
 			{"y-in-place", 2, 0, C_OPTION_IN_PLACE},
@@ -393,6 +413,45 @@ int main(int argc, char *argv[])
 			} else
 				open_depfile_mode = "wb";
 			break;
+		case C_OPTION_VIA:
+			{
+				const char *viafile = optarg;
+				FILE *fp;
+				char __line[2048], *p, *option;
+			
+				fp = fopen(viafile, "r");
+				if(fp == NULL) {
+					fprintf(stderr, "Cannot open viaFile: %s\n", viafile);
+					exit(2);
+				}
+
+				while( fgets(__line, sizeof(__line), fp) != NULL) {
+					p  =  preprocess_option(__line);
+					if( p[0] != '-' )
+						continue;
+
+					option = &p[2];
+					switch(p[1]) {
+					case 'I':
+						add_to_search_dir(__tcc_search_dirs[0], option);
+						break;
+					case 'D':
+						new_define(cl_info.contents, option);
+						break;
+					case 'U':
+						new_undef(cl_info.contents, option);
+						break;
+					case 'J':
+						add_to_search_dir(__tcc_search_dirs[1], option);
+						swap_search_order = true;
+						break;
+					}
+				}
+				fprintf(stderr, "Successfully hand via file: %s\b", viafile);
+				fclose(fp);
+			}
+			break;
+
 		case 'I':
 //			fprintf(stderr, "include dirs A: %s\n", optarg);
 			add_to_search_dir(__tcc_search_dirs[0], optarg);
@@ -514,6 +573,10 @@ int main(int argc, char *argv[])
 
 //		fprintf(stderr, "DEP: %s\n", dep_file.c_str());
 //		exit(2);
+		if( __source_file_dir )
+			free(__source_file_dir);
+		__source_file_dir = strdup(current_file);
+		source_file_dir = dirname(__source_file_dir);
 
 		file.set_file(current_file);
 		errmsg = parser.do_parse(tc, keywords, COUNT_OF(keywords), &file, tmpfile, depf);

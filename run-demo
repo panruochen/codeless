@@ -16,10 +16,15 @@ cd ${TARGET}
 
 ./configure
 make
-objcopy -O binary make.exe yy-1.bin
+if [ -r make.exe ]; then
+	yMAKE=make.exe
+else
+	yMAKE=make
+fi
+objcopy -O binary $yMAKE yy-1.bin
 
 make clean
-../run-make --cc=gcc --xcc=./pxcc.exe --make='make'
-objcopy -O binary make.exe yy-2.bin
+../pxcc-Make --y-cc=gcc
+objcopy -O binary $yMAKE yy-2.bin
 
 

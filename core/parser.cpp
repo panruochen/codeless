@@ -100,6 +100,9 @@ static bool calculate(const TOKEN& opnd1, const sym_t opr, const TOKEN& opnd2, T
 	case SSID_DIVISION:
 		result.u32_val = opnd1.u32_val / opnd2.u32_val;
 		break;
+	case SSID_PERCENT:
+		result.u32_val = opnd1.u32_val % opnd2.u32_val;
+		break;
 
 	case SSID_BITWISE_AND:
 		result.u32_val = opnd1.u32_val & opnd2.u32_val;
@@ -806,7 +809,7 @@ const char * ConditionalParser::split(sym_t tid, const char *line, TOKEN_ARRAY& 
 				state = SM_STATE_ADDITION;
 				cword = c;
 			} 
-			else if(c == '*' || c == '/' || c == '(' || c == ')' || c == '?' || c == ':'
+			else if(c == '*' || c == '/' || c == '%' || c == '(' || c == ')' || c == '?' || c == ':'
 				|| c == ',' ) {
 				char name[2];
 				name[0] = c;

@@ -1,0 +1,184 @@
+#!/usr/bin/env python
+
+import re
+import os
+import sys
+import subprocess
+import getopt
+import readline
+
+# The Host Compiler
+Y_CC    = None
+# The PXCC Tool
+Y_PXCC  = None
+
+Y_DEP_FILE        = None
+Y_CFLAGS_FILE     = None
+Y_VERBOSE_COMMAND = None
+
+TARGET_DIRECTORY = ''
+
+#  Run shell commands and get outputs into a string
+def run_command_sync(command):
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    return out.decode("utf-8")
+
+#  Run shell commands and print real time outputs to the console
+def exec_command_realtime(commands, _exec = None):
+	process = subprocess.Popen(commands, bufsize = 1, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, executable=_exec)
+	while process.poll() is None:
+		line = process.stdout.readline()
+		if line:
+			sys.stdout.write(line.decode('utf-8'))
+			sys.stdout.flush()
+	if process.returncode:
+		null = None
+
+def to_abs_path(x) :
+	if x[0:1] != '/' :
+		return os.getcwd() + '/' + x
+	return x
+
+def __getopt() :
+	flag = 0
+	s1 = []
+	s2 = ''
+	for a in sys.argv[1:] :
+		if flag :
+			s1.append(a)
+			flag = 0
+		else:
+			if ( a.find('--y-cc=') == 0 or a.find('--y-pxcc=') == 0 or a.find('--y-print-cflags=') == 0 or a.find('--y-print-dependencies=') == 0
+				or a.find('--y-verbose-command') == 0 ) :
+				s1.append(a)
+			elif a.find('--y-cc') == 0 or a.find('--y-pxcc') == 0 or a.find('--y-print-cflags') == 0 or a.find('--y-print-dependencies') == 0  :
+				flag = 1
+			else :
+				s2 = s2 + ' "' + a + '"'
+	return s1, s2
+
+
+#================================================
+#
+#  The main entry
+#
+#================================================
+
+a, make_args = __getopt()
+
+try:
+    opts, args = getopt.gnu_getopt(a, "d:", (["y-cc=", "y-xcc=", "y-print-cflags=", "y-print-dependencies=", "y-verbose-command"]))
+except getopt.GetoptError as err:
+	print(str(err), file=sys.stderr)
+	exit(2)
+
+for o, a in opts:
+	if o == "-d":
+		TARGET_DIRECTORY = a
+	elif o == '--y-cc':
+		Y_CC = a
+	elif o == '--y-xcc':
+		Y_PXCC = to_abs_path(a)
+	elif o == '--y-print-cflags' :
+		Y_CFLAGS_FILE = to_abs_path(a)
+	elif o == '--y-print-dependencies' :
+		Y_DEP_FILE = to_abs_path(a)
+	elif o == '--y-verbose-command' :
+		Y_VERBOSE_COMMAND = 'export MAKE_TEMPLATE_VERBOSE=1\n'
+
+if Y_PXCC == None:
+	Y_PXCC = to_abs_path(os.path.dirname(sys.argv[0]) + "/pxcc.exe")
+
+def gcc_env_get(prefix) :
+	flag = 0
+	sys_includes = ''
+	sys_defines  = ''
+	for line in run_command_sync(prefix + 'cpp -v 2>&1 /dev/null').split('\n'):
+		words = line.split()
+		if words[0] == '#include' and words[1] == '<...>':
+			flag = 1
+		elif flag:
+			if line == 'End of search list.':
+				break
+			else:
+				sys_includes += '-y-I ' + words[0] + ' \\\n'
+	sys_defines = run_command_sync(prefix + 'cpp -dM /dev/null')
+	return sys_includes, sys_defines
+
+def armcc_env_get() :
+	sys_includes = ''
+	if os.environ['ARMCC41INC'] :
+		sys_includes  = '-y-I ${ARMCC41INC} \\\n'
+	sys_defines   = '''#define __STDC__ 1
+#define __STDC_VERSION__ 199409L
+#define __EDG__ 1
+#define __EDG_VERSION__ 310
+#define __sizeof_int 4
+#define __sizeof_long 4
+#define __sizeof_ptr 4
+#define __ARMCC_VERSION 410894
+#define __TARGET_CPU_ARM7TDMI 1
+#define __TARGET_FPU_SOFTVFP 1
+#define __CC_ARM 1
+#define __arm 1
+#define __arm__ 1
+#define __TARGET_ARCH_4T 1
+#define __TARGET_ARCH_ARM 4
+#define __TARGET_ARCH_THUMB 1
+#define __TARGET_FEATURE_HALFWORD 1
+#define __TARGET_FEATURE_THUMB 1
+#define __TARGET_FEATURE_MULTIPLY 1
+#define __TARGET_FEATURE_EXTENSION_REGISTER_COUNT 0
+#define __OPTIMISE_SPACE 1
+#define __OPT_SMALL_ASSERT 1
+#define __OPTIMISE_LEVEL 2
+#define __SOFTFP__ 1
+'''
+	return sys_includes, sys_defines
+
+#if os.path.isfile(Y_CC) and  IS_IXUSR(os.stat(Y_CC).st_mode) :
+#	None
+if run_command_sync('which ' + Y_CC + ' 2>/dev/null').rstrip('\r\n').strip(' ') == '' :
+	print("No such file: ", Y_CC, file=sys.stderr)
+	exit(2)
+
+sys_includes = ''
+sys_defines  = ''
+if Y_CC != None:
+	m = re.match(r'^(.+)?gcc$', Y_CC)
+	if m :
+		prefix = m.group(1)
+		if prefix == None :
+			prefix = ''
+		sys_includes, sys_defines = gcc_env_get(prefix)
+	elif Y_CC == 'armcc':
+		sys_includes, sys_defines = armcc_env_get()
+		
+final_commands = ''
+final_commands += 'function '
+final_commands += Y_CC
+final_commands += '()\n{\n    '
+if Y_CFLAGS_FILE != None :
+	final_commands += "{ echo $* | grep -o -e '-[DU][^[:space:]]*'; echo; } >> " + Y_CFLAGS_FILE + '\n'
+final_commands += Y_PXCC
+if Y_DEP_FILE != None :
+	final_commands += ' -y-print-dependency=' + Y_DEP_FILE
+final_commands += """  -y-preprocess -y-debug=0 -y-in-place=.bak \\
+    -y-get-macros='"""  
+final_commands += sys_defines
+final_commands += "' \\\n"
+final_commands += sys_includes
+final_commands += ' $* || return $?\n'
+final_commands += '    ' + run_command_sync('which ' + Y_CC).rstrip('\r\n')
+final_commands += ' $*\n}\n'
+if Y_CFLAGS_FILE != None :
+	final_commands += ': > ' + Y_CFLAGS_FILE + '\n'
+if Y_VERBOSE_COMMAND != None :
+	final_commands += Y_VERBOSE_COMMAND
+final_commands += 'export -f ' + Y_CC + '\n' 
+final_commands += run_command_sync('which make').rstrip('\r\n') + make_args + '\n'
+
+exec_command_realtime(final_commands, '/bin/bash')
+
+
