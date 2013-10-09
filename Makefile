@@ -14,7 +14,7 @@ include common_Makefile
 SCRIPTS_DIR := core/scripts
 
 core/precedence-matrix.h: $(SCRIPTS_DIR)/c_opr.bnf $(SCRIPTS_DIR)/ssymid.cfg ./$(SCRIPTS_DIR)/bnf_parser.sh 
-	@echo GEN $@; if [ ! -x "$(word 3,$^)" ]; chmod +x "$(word 3,$^)"; fi; \
+	@echo GEN $@; if test ! -x "$(word 3,$^)" ; then chmod +x "$(word 3,$^)"; fi; \
 	$(word 3,$^) -m g1_oprmx -s g1_oprset -c $(word 1,$^) $(word 2,$^) >$@ || { rm -rf $@; exit 1; }
 
 .PHONY: run
