@@ -67,6 +67,7 @@ public:
 	virtual int  read() = 0;
 	virtual bool open() = 0;
 	virtual void close() = 0;
+	virtual ~GENERIC_FILE() {} ;
 };
 
 class REAL_FILE : public GENERIC_FILE {
@@ -94,7 +95,12 @@ public:
 			name.clear();
 		}
 	}
-	
+
+	virtual ~REAL_FILE() {
+		if(fp)
+			fclose(fp);
+	}
+
 	REAL_FILE() {
 		fp   = NULL;
 	};
@@ -134,7 +140,7 @@ public:
 
 class MEMORY_FILE : public GENERIC_FILE {
 protected:
-	size_t   pos;
+	size_t     pos;
 
 	virtual int read()
 	{
@@ -148,8 +154,14 @@ public:
 	MEMORY_FILE() {
 		pos  = 0;
 	}
+	void set_filename(const char *name) {
+		this->name = name;
+		this->line = 0;
+	}
+
 	virtual bool open()  { pos = 0; return true; }
 	virtual void close() {}
+	virtual ~MEMORY_FILE() {}
 };
 
 
@@ -194,7 +206,7 @@ protected:
 	
 	void initialize(TCC_CONTEXT *tc, const char **keywords, size_t num_keywords, GENERIC_FILE *infile, FILE *outdev, FILE *dep_fp);
 	sym_t preprocessed_line(const char *line, const char **pos);
-	const char *run(sym_t id, const char *line, TOKEN_ARRAY& tokens);
+	const char *run(sym_t id, const char *line, bool *anything_changed);
 
 	inline void mark_comment_start() { comment_start = raw_line.size() - 2; }
 	inline void enable_output()  { have_output = true; }
@@ -208,7 +220,7 @@ public:
 	}
 	const char *split(sym_t id, const char *line, TOKEN_ARRAY& tokens);
 	const char *do_parse(TCC_CONTEXT *tc, const char **keywords, size_t num_keywords, GENERIC_FILE *file,
-		const char *outfile, FILE *depf);
+		const char *outfile, FILE *depf, bool *anything_changed);
 };
 
 typedef struct _MESSAGE_LEVEL_TYPE *MESSAGE_LEVEL;
@@ -223,7 +235,6 @@ protected:
 	FILE *stream;
 
 public:
-	static const char endl;
 	BASIC_CONSOLE() { stream = NULL; }
 	void init(FILE *stream) { this->stream = stream; }
 
@@ -276,7 +287,6 @@ public:
 	TCC_DEBUG_CONSOLE& operator << (const ssize_t);
 	TCC_DEBUG_CONSOLE& operator << (const size_t);
 
-	TCC_DEBUG_CONSOLE& operator << (TOKEN_SEQ *);
 	TCC_DEBUG_CONSOLE& operator << (const TOKEN_ARRAY&);
 	TCC_DEBUG_CONSOLE& operator << (const CC_ARRAY<sym_t>&);
 	TCC_DEBUG_CONSOLE& operator << (const TOKEN *token);
@@ -291,7 +301,6 @@ private:
 	void current_message_level_reset() {}
 
 public:
-	static const char endl;
 	void init(FILE *stream, TCC_CONTEXT *tc) {}
 	void set_gate_level(MESSAGE_LEVEL level) {}
 
@@ -303,7 +312,6 @@ public:
     IMPLEMENT_OPERATOR (const char)
 	IMPLEMENT_OPERATOR (const ssize_t)
 	IMPLEMENT_OPERATOR (const size_t)
-	IMPLEMENT_OPERATOR (TOKEN_SEQ *)
 	IMPLEMENT_OPERATOR (const TOKEN_ARRAY&)
 	IMPLEMENT_OPERATOR (const CC_ARRAY<sym_t>&)
 	IMPLEMENT_OPERATOR (const TOKEN *token)
@@ -321,19 +329,27 @@ typedef TCC_DEBUG_CONSOLE   DEBUG_CONSOLE;
 typedef TCC_NULL_CONSOLE    DEBUG_CONSOLE;
 #endif
 
-void handle_define(TCC_CONTEXT *tc, TOKEN_ARRAY& tokens);
-void handle_undef(TCC_CONTEXT *tc, TOKEN& token);
-void do_macro_expansion(TCC_CONTEXT *tc, TOKEN_ARRAY& tokens);
+void preprocess_command_line(int argc, char *argv[], CC_ARRAY<CC_STRING> &new_options);
+void handle_undef(TCC_CONTEXT *tc, const char *line);
+CC_STRING macro_expand(TCC_CONTEXT *tc, const char *line, const char **errs);
+const char *check_file(const char *inc_file, const char *cur_file, bool include_current_dir, bool include_next = false, bool *in_sys_dir = NULL);
 
+bool add_ignore_pattern(const char *pattern);
+bool check_file_ignored(const char *filename);
+
+extern CC_STRING host_cc;
+extern CC_ARRAY<CC_STRING>  dx_traced_macros, dx_traced_lines;
 extern BASIC_CONSOLE runtime_console;
 extern DEBUG_CONSOLE debug_console;
-extern bool          preprocess_mode;
-int check_symbol_defined(TCC_CONTEXT *tc, sym_t id, bool reverse, TOKEN *token);
-const char *check_file(const char *filename, bool include_current_dir, bool include_next = false, bool *in_sys_dir = NULL);
+extern bool          rtm_preprocess;
+extern bool          rtm_silent;
+
+bool find(const CC_ARRAY<CC_STRING>& haystack, const CC_STRING& needle);
+void join(CC_STRING& s, const char *start, const char *end);
+void setup_host_cc_env(int argc, char *argv[]);
 
 #include <ctype.h>
 #define SKIP_WHITE_SPACES(ptr)    while( isspace(*ptr) ) ptr++
 
-extern const TOKEN g_unevaluable_token;
 #endif
 

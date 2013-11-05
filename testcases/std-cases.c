@@ -178,7 +178,7 @@
 #define CASE13_A2     2
 
 #if ((CASE13_A1 == 1 ) AND ( CASE13_A2 != 1 ) )
-"It is error for case 13.A"
+"It is okay for case 13.A"
 #else
 "It is error for case 13.A"
 #endif

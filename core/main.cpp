@@ -9,15 +9,18 @@
 #include <sys/types.h>
 #include <getopt.h>
 #include <libgen.h>
+#include <utime.h>
 
 #include "c++-if.h"
 
 #include "tcc.h"
 #include "precedence-matrix.h"
 
-#define PROGRAM_NAME  "pxcc"
 
-static char *__source_file_dir, *source_file_dir;
+#define BLOCK_START   do {
+#define BLOCK_END     } while(0);
+
+#define PROGRAM_NAME  "pxcc"
 
 static char *preprocess_option(char *line)
 {
@@ -32,9 +35,9 @@ static char *preprocess_option(char *line)
 	return p;
 }
 
-static int precedence_matrix_setup(TCC_CONTEXT *tc, int oprnum, const char **oprset, const char **matrix)
+static int precedence_matrix_setup(TCC_CONTEXT *tc, size_t oprnum, const char **oprset, const char **matrix)
 {
-	int i;
+	size_t i;
 	int rc = 0;
 
 	if( (tc->symtab = symtab_create()) == NULL )
@@ -84,19 +87,41 @@ int operator_compare(TCC_CONTEXT *tc, const char *op1, const char *op2)
 	return oprmx_compare(tc->symtab, id1, id2);
 }
 
-static CC_ARRAY<CC_STRING>  __tcc_search_dirs[2];
-static CC_ARRAY<CC_STRING>  *tcc_search_dirs[2][2];
+static CC_ARRAY<CC_STRING>  std_search_dirs[2]; /* 0 -- #include <file>
+												 * 1 -- #include "file"
+												 **/
+static CC_ARRAY<CC_STRING>  tcc_sys_search_dirs;
+
+bool find(const CC_ARRAY<CC_STRING>& haystack, const CC_STRING& needle)
+{
+	size_t i;
+
+	for(i = 0; i < haystack.size(); i++) {
+		if( haystack[i] == needle )
+			return true;
+	}
+	return false;
+}
+
 
 static void add_to_search_dir(CC_ARRAY<CC_STRING>& search_dirs, const char *dir)
 {
 	size_t i;
-
 	for(i = 0; i < search_dirs.size(); i++) {
 		if( search_dirs[i] == dir )
 			return;
 	}
 	search_dirs.push_back(dir);
 }
+
+
+static void join(CC_ARRAY<CC_STRING>& x, const CC_ARRAY<CC_STRING>& y)
+{
+	size_t i;
+	for(i = 0; i < y.size(); i++) 
+		x.push_back(y[i]);
+}
+
 
 static void new_define(CC_STRING& total, const char *option)
 {
@@ -130,6 +155,17 @@ static void new_undef(CC_STRING& total, const char *option)
 	total += "#undef ";
 	total += option;
 	total += '\n';
+}
+
+static CC_STRING xdirname(const char *path)
+{
+	char *tmp;
+	CC_STRING dir;
+
+	tmp = strdup(path);
+	dir = dirname(tmp);
+	free(tmp);
+	return dir;
 }
 
 /*
@@ -166,25 +202,34 @@ Both -I and -J
 --kandr_include
 	No effect                       	Uses Kernighan and Ritchie search rules
  */
-const char *check_file(const char *filename, bool include_current_dir, bool include_next, bool *in_sys_dir)
+const char *check_file(const char *filename, const char *cur_file, bool quote_include,
+	bool include_next, bool *in_sys_dir)
 {
-	size_t i, n, count;
+	size_t i, count;
 	static CC_STRING path;
+	char *tmp;
+	CC_STRING curdir;
 	struct stat st;
 
+	if(cur_file != NULL) {
+		curdir = xdirname(cur_file);
+	} else
+		curdir = ".";
 	count = 0;
-	path  = source_file_dir;
+	path  = curdir;
 	path += '/';
 	path += filename;
-//	if(include_current_dir && stat(filename, &st) == 0 ) {
-	if(include_current_dir && stat(path.c_str(), &st) == 0 ) {
-//		path = filename;
+	if(quote_include && stat(path.c_str(), &st) == 0 ) {
 		++count;
-		if( ! include_next )
+		if( ! include_next ) {
+			if(in_sys_dir != NULL)
+				*in_sys_dir = find(tcc_sys_search_dirs, curdir);
 			return path.c_str();
+		}
 	}
-	for(n = 0; n < 2; n++) {
-		CC_ARRAY<CC_STRING>& dirs = *tcc_search_dirs[!!include_current_dir][n];
+	
+	{
+		CC_ARRAY<CC_STRING>& dirs = std_search_dirs[!!quote_include];
 		for(i = 0; i < dirs.size(); i++) {
 			path = dirs[i];
 			path += '/';
@@ -194,7 +239,7 @@ const char *check_file(const char *filename, bool include_current_dir, bool incl
 				++count;
 				if( ! include_next || count == 2) {
 					if(in_sys_dir != NULL)
-						*in_sys_dir = (&dirs - __tcc_search_dirs);
+						*in_sys_dir = find(tcc_sys_search_dirs, dirs[i]);
 					return path.c_str();
 				}
 			}
@@ -202,6 +247,21 @@ const char *check_file(const char *filename, bool include_current_dir, bool incl
 	}
 	return NULL;
 }
+
+const void show_search_dirs()
+{
+	size_t i, n;
+	FILE *dev = stderr;
+
+	fprintf(dev, "Search directories:\n");
+	for(i = 0; i < std_search_dirs[0].size(); i++)
+		fprintf(dev, " %s\n", std_search_dirs[0][i].c_str());
+	fprintf(dev, "System search directories:\n");
+	for(i = 0; i < tcc_sys_search_dirs.size(); i++)
+		fprintf(dev, " %s\n", tcc_sys_search_dirs[i].c_str());
+	fprintf(dev, "\n");
+}
+
 
 static int tcc_init(TCC_CONTEXT *tc)
 {
@@ -280,20 +340,27 @@ static void show_usage_and_exit(int exit_code)
 BASIC_CONSOLE  runtime_console;
 DEBUG_CONSOLE  debug_console;
 
-static bool check_ext(const char *filename)
+enum {
+	SOURCE_TYPE_ERR = 0,
+	SOURCE_TYPE_C   = 1,
+	SOURCE_TYPE_CPP = 2,
+};
+
+static uint8_t check_ext(const char *filename)
 {
 	const char *p = filename + strlen(filename);
 	while((--p) >= filename) {
 		if(*p == '.') {
 			p++;
-			if( strcasecmp(p, "c") == 0 || strcasecmp(p, "cc") == 0 ||
-				strcasecmp(p, "cxx") == 0 || strcasecmp(p, "cpp") == 0 ) {
-				return true;
+			if( strcasecmp(p, "c") == 0 ) {
+				return SOURCE_TYPE_C;
+			} else if( strcasecmp(p, "cc") == 0 || strcasecmp(p, "cxx") == 0 || strcasecmp(p, "cpp") == 0 ) {
+				return SOURCE_TYPE_CPP;
 			}
-			return false;
+			return SOURCE_TYPE_ERR;
 		}
 	}
-	return false;
+	return SOURCE_TYPE_ERR;
 }
 
 static CC_STRING get_dep_filename(const char *filename)
@@ -311,23 +378,64 @@ static CC_STRING get_dep_filename(const char *filename)
 	return s;
 }
 
+static bool get_utb(const char *path, struct utimbuf *times)
+{
+	struct stat stbuf;
 
-bool preprocess_mode = false;
+	if( stat(path, &stbuf) != 0 )
+		return false;
+
+	times->actime = stbuf.st_atime;
+	times->modtime = stbuf.st_mtime;
+	return true;
+}
+
+/***
+static CC_ARRAY<CC_STRING> __getopt(int argc, char *argv[])
+{
+	CC_ARRAY<CC_SRTING> options, o;
+	int flag;
+
+	flag = 0;
+	for(i = 1; i < argc; i++) {
+		if(flag) {
+			flag = 0;
+		} else {
+			index = find(cc_options, argv[i]);
+			if( index > 0 ) {
+				if( cc_options[strlen(cc_options)] == '=' )
+					;
+				else
+					flag = 1;
+
+			}
+		}
+	}
+}
+****/
+
+static void save_cl_options(int argc, char *argv[])
+{
+	int i;
+	CC_STRING file;
+	char cwd[260];
+	FILE *fp;
+
+	file = xdirname(argv[0]);
+	file += "/cl-options.txt";
+
+	getcwd(cwd, sizeof(cwd));
+	fp = fopen(file.c_str(), "w");
+	fprintf(fp, "%s\n", cwd);
+	for(i = 0; i < argc; i++) {
+		fprintf(fp, "%s ", argv[i]);
+	}
+	fclose(fp);
+}
+
+
 int main(int argc, char *argv[])
 {
-	enum {
-		C_OPTION_DEBUG     = 311,
-		C_OPTION_IMACROS,
-		C_OPTION_IN_PLACE,
-		C_OPTION_PREPROCESS,
-		C_OPTION_INCDIR,
-		C_OPTION_GET_MACROS,
-		C_OPTION_PRINT_DEPENDENCY,
-		C_OPTION_APPEND_DEPENDENCY,
-		C_OPTION_SOURCE,
-		C_OPTION_VIA,
-	};
-
 	TCC_CONTEXT tcc_context, *tc = &tcc_context;
 	CC_ARRAY<CC_STRING> imacro_files;
 	CC_ARRAY<CC_STRING> source_files;
@@ -337,13 +445,54 @@ int main(int argc, char *argv[])
 	int i;
 	MEMORY_FILE cl_info;
 	CC_STRING warning;
-	bool swap_search_order;
 	const char *open_depfile_mode = NULL;
 	CC_STRING dep_file;
 	const char *errmsg;
+	CC_ARRAY<CC_STRING>  new_options;
+	int new_argc;
+	char **new_argv;
+
+//	save_cl_options(argc, argv);
 
 	runtime_console.init(stderr);
 	debug_console.init(stderr, tc);
+
+BLOCK_START
+	enum {
+		C_OPTION_DEBUG     = 311,
+		C_OPTION_CC,
+		C_OPTION_TRACE_MACRO,
+		C_OPTION_TRACE_LINE,
+		C_OPTION_IGNORE,
+		C_OPTION_IMACROS,
+		C_OPTION_IN_PLACE,
+		C_OPTION_PREPROCESS,
+		C_OPTION_INCDIR,
+		C_OPTION_GET_MACROS,
+		C_OPTION_PRINT_DEPENDENCY,
+		C_OPTION_APPEND_DEPENDENCY,
+		C_OPTION_SOURCE,
+		C_OPTION_VIA,
+		C_OPTION_SILENT,
+	};
+	CC_ARRAY<CC_STRING>  search_dirs_I, search_dirs_J, search_dirs_quote;
+
+	preprocess_command_line(argc, argv, new_options);
+
+	new_argc = new_options.size();
+	new_argv = (char **) malloc(sizeof(char*) * new_argc);
+	for(i = 0; i < new_argc; i++)
+		new_argv[i] = (char *) new_options[i].c_str();
+
+#if 0
+	for(i = 0; i < argc; i++)
+		printf("%s ", argv[i]);
+	printf("\n");
+	for(i = 0; i < new_argc; i++)
+		printf("%s ", new_argv[i]);
+	printf("\n");
+	exit(0);
+#endif
 
 	opterr = 0;
 	while (1) {
@@ -353,11 +502,15 @@ int main(int argc, char *argv[])
 			{"include",  1, 0, 0},
 			{"imacros",  1, 0, C_OPTION_IMACROS},
 			{"isysroot", 1, 0, 0},
-			{"via",  1, 0, C_OPTION_VIA},
 /*--------------------------------------------------------------------*/
 			{"y-debug",    1, 0, C_OPTION_DEBUG},
+			{"y-cc",    1, 0, C_OPTION_CC},
+			{"y-trace-macro", 1, 0, C_OPTION_TRACE_MACRO },
+			{"y-trace-line", 1, 0, C_OPTION_TRACE_LINE },
+			{"y-ignore", 1, 0, C_OPTION_IGNORE },
 			{"y-in-place", 2, 0, C_OPTION_IN_PLACE},
 			{"y-preprocess", 0, 0, C_OPTION_PREPROCESS},
+			{"y-silent", 0, 0, C_OPTION_SILENT},
 			{"y-I", 1, 0, C_OPTION_INCDIR},
 			{"y-get-macros", 1, 0, C_OPTION_GET_MACROS},
 			{"y-print-dependency", 2, 0, C_OPTION_PRINT_DEPENDENCY},
@@ -365,7 +518,7 @@ int main(int argc, char *argv[])
 			{0, 0, 0, 0}
 		};
 
-		c = getopt_long_only(argc, argv, "I:D:U:J:", long_options, &option_index);
+		c = getopt_long_only(new_argc, new_argv, "I:D:U:J:", long_options, &option_index);
 		if (c == -1)
 			break;
 		switch (c) {
@@ -380,15 +533,26 @@ int main(int argc, char *argv[])
             break;
 
 		case C_OPTION_PREPROCESS:
-			preprocess_mode = true;
+			rtm_preprocess = true;
 			break;
 		case C_OPTION_DEBUG:
 			{
 				MESSAGE_LEVEL level;
 				level = (MESSAGE_LEVEL) atol(optarg);
-				fprintf(stderr, "debug level: %u\n", level);
 				debug_console.set_gate_level(level);
 			}
+			break;
+		case C_OPTION_CC:
+			host_cc = optarg;
+			break;
+		case C_OPTION_TRACE_MACRO:
+			dx_traced_macros.push_back(optarg);
+			break;
+		case C_OPTION_TRACE_LINE:
+			dx_traced_lines.push_back(optarg);
+			break;
+		case C_OPTION_IGNORE:
+			add_ignore_pattern(optarg);
 			break;
 		case C_OPTION_IMACROS:
 			imacro_files.push_back(optarg);
@@ -399,12 +563,13 @@ int main(int argc, char *argv[])
 				suffix = "";
 			break;
 		case C_OPTION_INCDIR:
-//			fprintf(stderr, "include dirs B(1): %s\n", optarg);
-			add_to_search_dir(__tcc_search_dirs[1], optarg);
+			add_to_search_dir(search_dirs_I, optarg);
+			add_to_search_dir(tcc_sys_search_dirs, optarg);
 			break;
 		case C_OPTION_GET_MACROS:
-//			fprintf(stderr, "get macros: %s\n", optarg);
 			cl_info.contents += optarg;
+			cl_info.contents += '\n';
+//			runtime_console << "Predefines:\n" << cl_info.contents << "\n\n";
 			break;
 		case C_OPTION_PRINT_DEPENDENCY:
 			if(optarg != NULL) {
@@ -413,48 +578,9 @@ int main(int argc, char *argv[])
 			} else
 				open_depfile_mode = "wb";
 			break;
-		case C_OPTION_VIA:
-			{
-				const char *viafile = optarg;
-				FILE *fp;
-				char __line[2048], *p, *option;
-			
-				fp = fopen(viafile, "r");
-				if(fp == NULL) {
-					fprintf(stderr, "Cannot open viaFile: %s\n", viafile);
-					exit(2);
-				}
-
-				while( fgets(__line, sizeof(__line), fp) != NULL) {
-					p  =  preprocess_option(__line);
-					if( p[0] != '-' )
-						continue;
-
-					option = &p[2];
-					switch(p[1]) {
-					case 'I':
-						add_to_search_dir(__tcc_search_dirs[0], option);
-						break;
-					case 'D':
-						new_define(cl_info.contents, option);
-						break;
-					case 'U':
-						new_undef(cl_info.contents, option);
-						break;
-					case 'J':
-						add_to_search_dir(__tcc_search_dirs[1], option);
-						swap_search_order = true;
-						break;
-					}
-				}
-				fprintf(stderr, "Successfully hand via file: %s\b", viafile);
-				fclose(fp);
-			}
-			break;
-
+		
 		case 'I':
-//			fprintf(stderr, "include dirs A: %s\n", optarg);
-			add_to_search_dir(__tcc_search_dirs[0], optarg);
+			add_to_search_dir(search_dirs_I, optarg);
 			break;
 		case 'D':
 			new_define(cl_info.contents, optarg);
@@ -463,15 +589,14 @@ int main(int argc, char *argv[])
 			new_undef(cl_info.contents, optarg);
 			break;
 		case 'J':
-//			fprintf(stderr, "include dirs B(2): %s\n", optarg);
-			add_to_search_dir(__tcc_search_dirs[1], optarg);
-			swap_search_order = true;
+			add_to_search_dir(search_dirs_J, optarg);
 			break;
 		case C_OPTION_SOURCE:
-//			fprintf(stderr, "get macros: %s\n", optarg);
 			source_files.push_back(optarg);
 			break;
-
+		case C_OPTION_SILENT:
+			rtm_silent = true;
+			break;
 
 		case ':':
 		case '?':
@@ -479,33 +604,55 @@ int main(int argc, char *argv[])
 			;
 		}
 	}
-	
-	if(swap_search_order) {
-		// #include <>
-		tcc_search_dirs[0][0] = & __tcc_search_dirs[1];
-		tcc_search_dirs[0][1] = & __tcc_search_dirs[0];
-		// #include ""
-		tcc_search_dirs[1][0] = & __tcc_search_dirs[0];
-		tcc_search_dirs[1][1] = & __tcc_search_dirs[1];
-	} else {
-		tcc_search_dirs[0][0] = & __tcc_search_dirs[0];
-		tcc_search_dirs[0][1] = & __tcc_search_dirs[1];
-		tcc_search_dirs[1][0] = & __tcc_search_dirs[0];
-		tcc_search_dirs[1][1] = & __tcc_search_dirs[1];
-	}
+
+	// #include <file>
+	join(std_search_dirs[0], search_dirs_J);
+	join(std_search_dirs[0], search_dirs_I);
+
+	// #include "file"
+	join(std_search_dirs[1], search_dirs_I);
+	join(std_search_dirs[1], search_dirs_J);
+
+BLOCK_END
 
 	tcc_init(tc);
 	ConditionalParser parser;
 	static const char *keywords[] = {
 		"#define", "#undef", "#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif", "#include", "#include_next"
 	};
-	if(cl_info.contents.size() > 0) {
-		errmsg = parser.do_parse(tc, keywords, 2, &cl_info, NULL, NULL);
-		if(errmsg != NULL) {
-			fprintf(stderr, "Error on parsing command line\n");
+	
+	for(i = optind; i < new_argc; ) {
+		const char *current_file = new_argv[i++];
+		uint8_t type;
+
+		/* Pick up one source filename from lots of unrecognized options 
+		 * by checking the extension name.
+		 */
+		type = check_ext(current_file);
+		if( type == SOURCE_TYPE_ERR )
+			continue;
+		else if( type == SOURCE_TYPE_CPP ) {
+			new_define(cl_info.contents, "__cplusplus");
+		}
+		source_files.push_back(current_file);
+	}
+
+	if( source_files.size() == 0 ) 
+		exit(0);
+	if( source_files.size() > 1 ) {
+		if( check_ext(argv[i]) ) {
+			runtime_console << "Multiple input files" << '\n';
 			return -2;
 		}
-//		debug_console << DML_DEBUG << (TCC_MACRO_TABLE) tc->mtab;
+	}
+
+	if(cl_info.contents.size() > 0) {
+		cl_info.set_filename("<command line>");
+		errmsg = parser.do_parse(tc, keywords, 2, &cl_info, NULL, NULL, NULL);
+		if(errmsg != NULL) {
+			runtime_console << "Error on parsing command line\n" ;
+			return -2;
+		}
 	}
 
 	REAL_FILE file;
@@ -513,45 +660,41 @@ int main(int argc, char *argv[])
 		for(size_t i = 0; i < imacro_files.size(); i++) {
 			const char *path;
 	
-			path = check_file(imacro_files[i].c_str(), true);
+			path = check_file(imacro_files[i].c_str(), NULL, true);
 			if( path == NULL || ! file.open(path) )
 				continue;
-			parser.do_parse(tc, keywords, 2, &file, NULL, NULL);
+			parser.do_parse(tc, keywords, 2, &file, NULL, NULL, NULL);
 			file.close();
 		}
 
-//	fprintf(stderr, "%s", cl_info.contents.c_str());
-
-//	fprintf(stderr, "suffix:%s\n", suffix);
-	for(i = optind; i < argc; ) {
-		const char *current_file = argv[i++];
-
-		/* Pick up one source filename from lots of unrecognized options 
-		 * by checking the extension name.
-		 */
-		if( ! check_ext(current_file) )
-			continue;
-		source_files.push_back(current_file);
-	}
-
-	if( source_files.size() == 0 ) 
-		show_usage_and_exit(EXIT_FAILURE);
-	if( source_files.size() > 1 ) {
-		if( check_ext(argv[i]) ) {
-			runtime_console << "Multiple input files" << BASIC_CONSOLE::endl;
-			return -2;
-		}
-	}
-
 	for(i = 0; i < 1; i++) {
 		char tmpbuf[256];
+		bool file_changed;
 		const char *current_file = source_files[i].c_str();
 		FILE *depf = NULL;
+		struct utimbuf utb;
 
+#if 0
+		if ( strstr(current_file, "config/version.c") ) {
+			for(i = 0; i < argc; i++)
+				runtime_console << argv[i] << ' ';
+			runtime_console << '\n';
+			exit(2);
+		}
+#endif
+
+		if( check_file_ignored(current_file) ) {
+			debug_console << current_file << " is ignored!\n";
+			continue;
+		}
+
+		if( strstr(current_file, "glob.c") != NULL )
+			save_cl_options(argc, argv);
+		
 		if(suffix != NULL) {
 			strcpy(tmpbuf, PROGRAM_NAME "XXXXXX");
 			if( mktemp(tmpbuf) == NULL ) {
-				runtime_console << "Cannot create temporary files" << BASIC_CONSOLE::endl ;
+				runtime_console << "Cannot create temporary files" << '\n' ;
 				return -EIO;
 			}
 			tmpfile = tmpbuf;
@@ -562,7 +705,6 @@ int main(int argc, char *argv[])
 		if( open_depfile_mode )  {
 			if( dep_file.size() == 0 )
 				dep_file = get_dep_filename(current_file);
-//			fprintf(stderr, "DEP %s, mode: %s\n", dep_file.c_str(), open_depfile_mode);
 			depf = fopen(dep_file.c_str(), open_depfile_mode);
 			if(depf == NULL) {
 				snprintf(tmpbuf, sizeof(tmpbuf), "Cannot write to %s", dep_file.c_str());
@@ -571,36 +713,34 @@ int main(int argc, char *argv[])
 			}
 		}
 
-//		fprintf(stderr, "DEP: %s\n", dep_file.c_str());
-//		exit(2);
-		if( __source_file_dir )
-			free(__source_file_dir);
-		__source_file_dir = strdup(current_file);
-		source_file_dir = dirname(__source_file_dir);
-
 		file.set_file(current_file);
-		errmsg = parser.do_parse(tc, keywords, COUNT_OF(keywords), &file, tmpfile, depf);
-//		debug_console.macro_table_dump();
+		if( ! get_utb(current_file, &utb) )
+			continue;
+		errmsg = parser.do_parse(tc, keywords, COUNT_OF(keywords), &file, tmpfile, depf, &file_changed);
 		if(errmsg == 0) {
-			if(suffix != NULL) {
+			if(suffix != NULL && file_changed) {
 				if(suffix[0] != '\0') {
 					rename(current_file, outfile.c_str());
 				}
 				rename(tmpfile, current_file);
-				fprintf(stderr, "Success on handling %s\n", current_file);
+				utime(current_file, &utb);
+				runtime_console << "Success on handling " << current_file << '\n';
 			}
 		} else {
 error:
-			fprintf(stderr, "Error on handling %s\n", current_file);
-			fprintf(stderr, "**** %s\n", errmsg);
+			runtime_console << "Error on handling " << current_file << '\n';
+			show_search_dirs();
 			remove(tmpfile);
-			return -1;
+			return 2;
 		}
 		break;
 	}
-
-	
 	return 0;
 }
 
 
+bool rtm_preprocess = false;
+bool rtm_silent = false;
+CC_ARRAY<CC_STRING>  dx_traced_macros;
+CC_ARRAY<CC_STRING>  dx_traced_lines;
+CC_STRING host_cc;

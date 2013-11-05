@@ -1,6 +1,6 @@
-EXTRA_CFLAGS    := -O2
-EXTRA_CFLAGS    += -Wall -Wno-unused
-#DEFINES         := -DHAVE_DEBUG_CONSOLE -DHAVE_NAME_IN_TOKEN
+EXTRA_CFLAGS    := -g -O2
+EXTRA_CFLAGS    += -Wall -Wno-unused -Wno-format
+DEFINES         := -DHAVE_DEBUG_CONSOLE
 src-y           := ./core/ ./platform/
 inc-y           := $(src-y)
 TARGET_TYPE     := EXE
@@ -8,6 +8,8 @@ TARGET          := pxcc.exe
 OBJECT_DIR      := objs
 SOURCE_SUFFIXES := c cpp
 TARGET_DEPENDS  := core/precedence-matrix.h
+
+##VERBOSE_COMMAND := y
 
 include common_Makefile
 

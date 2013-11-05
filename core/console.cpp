@@ -11,72 +11,78 @@
 #include "precedence-matrix.h"
 #include "c++-if.h"
 
-const char BASIC_CONSOLE::endl = 10;
 
 BASIC_CONSOLE& BASIC_CONSOLE::operator << (const char *m)
 {
-	fprintf(stream, "%s", m);
+	if( ! rtm_silent )
+		fprintf(stream, "%s", m);
 	return *this;
 }
 
 BASIC_CONSOLE& BASIC_CONSOLE::operator << (const char m)
 {
-	fprintf(stream, "%c", m);
+	if( ! rtm_silent )
+		fprintf(stream, "%c", m);
 	return *this;
 }
 
 BASIC_CONSOLE& BASIC_CONSOLE::operator << (const ssize_t m)
 {
-	fprintf(stream, "%d", m);
+	if( ! rtm_silent )
+		fprintf(stream, "%d", m);
 	return *this;
 }
 
 BASIC_CONSOLE& BASIC_CONSOLE::operator << (const size_t m)
 {
-	fprintf(stream, "%u", m);
+	if( ! rtm_silent )
+		fprintf(stream, "%u", m);
 	return *this;
 }
 
 BASIC_CONSOLE& BASIC_CONSOLE::operator << (const CC_STRING& m)
 {
-	fprintf(stream, "%s", m.c_str());
+	if( ! rtm_silent )
+		fprintf(stream, "%s", m.c_str());
 	return *this;
 }
 
 /*********************************************************************/
 const MESSAGE_LEVEL TCC_DEBUG_CONSOLE::default_gate_level = (MESSAGE_LEVEL) DML_RUNTIME;
 
+#define CAN_PRINT()   ((!rtm_silent) && can_print())
+
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const char *m)
 {
-	if(can_print())
+	if(CAN_PRINT())
 		fprintf(stream, "%s", m);
 	return *this;
 }
 
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const char m)
 {
-	if(can_print())
+	if(CAN_PRINT())
 		fprintf(stream, "%c", m);
 	return *this;
 }
 
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const ssize_t m)
 {
-	if(can_print())
+	if(CAN_PRINT())
 		fprintf(stream, "%d", m);
 	return *this;
 }
 
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const size_t m)
 {
-	if(can_print())
+	if(CAN_PRINT())
 		fprintf(stream, "%u", m);
 	return *this;
 }
 
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const CC_STRING& m)
 {
-	if(can_print())
+	if(CAN_PRINT())
 		fprintf(stream, "%s", m.c_str());
 	return *this;
 }
@@ -87,19 +93,10 @@ TCC_DEBUG_CONSOLE TCC_DEBUG_CONSOLE::operator << (MESSAGE_LEVEL level)
 	return *this;
 }
 
-TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (TOKEN_SEQ *tseq)
-{
-	if( !can_print() )
-		return *this;
-	size_t i;
-	for(i = 0; i < tseq->nr; i++)
-		fprintf(stream, " %s", id_to_symbol(tc->symtab,tseq->buf[i].id));
-	return *this;
-}
 
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const TOKEN_ARRAY& tokens)
 {
-	if( !can_print() )
+	if( !CAN_PRINT() )
 		return *this;
 	size_t i;
 	for(i = 0; i < tokens.size(); i++) {
@@ -113,7 +110,7 @@ TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const TOKEN_ARRAY& tokens)
 
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const CC_ARRAY<sym_t>& tokens)
 {
-	if( !can_print() )
+	if( !CAN_PRINT() )
 		return *this;
 	size_t i;
 	for(i = 0; i < tokens.size(); i++) 
@@ -123,7 +120,7 @@ TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const CC_ARRAY<sym_t>& tokens
 
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const TOKEN *token)
 {
-	if( !can_print() )
+	if( !CAN_PRINT() )
 		return *this;
 	switch(token->attr) {
 	case TA_UINT:
@@ -142,7 +139,7 @@ TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const TOKEN *token)
 
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const TCC_MACRO_TABLE macro_table)
 {
-	if( !can_print() )
+	if( !CAN_PRINT() )
 		return *this;
 	sym_t id;
 	MACRO_INFO *minfo;
@@ -150,7 +147,7 @@ TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const TCC_MACRO_TABLE macro_t
 	while( (id = macro_table_list((CC_HANDLE)macro_table, &minfo)) != SSID_INVALID ) {
 		size_t j;
 
-		if( ! minfo->handled ) {
+		if( minfo->line != NULL ) {
 			fprintf(stream, "#define %s", minfo->line);
 			continue;
 		}
@@ -161,28 +158,15 @@ TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::operator << (const TCC_MACRO_TABLE macro_t
 		} else 
 			fprintf(stream, "#define %s  ", id_to_symbol(tc->symtab, id));
 
-		if(minfo->params != NULL) {
-			fprintf(stream, "(");
-			for(j = 0; j + 1 < minfo->params->nr; j++)  {
-				fprintf(stream, "%s,", id_to_symbol(tc->symtab, minfo->params->buf[j]));
-			}
-			if( j < minfo->params->nr )
-				fprintf(stream, "%s", id_to_symbol(tc->symtab, minfo->params->buf[j]));
-			fprintf(stream, ")  ");
-		}
-		if(minfo->def != NULL) {
-			for(j = 0; j < minfo->def->nr; j++) 
-				operator << (minfo->def->buf + j);
-		}
-		fprintf(stream, "%c", endl);
+		fprintf(stream, "\n");
 	}
-	fprintf(stream, "%c", endl);
+	fprintf(stream, "\n");
 	return *this;
 }
 
 TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::precedence_matrix_dump(void)
 {
-	if( !can_print() )
+	if( !CAN_PRINT() )
 		return *this;
 	size_t i, j;
 
@@ -199,7 +183,7 @@ TCC_DEBUG_CONSOLE& TCC_DEBUG_CONSOLE::precedence_matrix_dump(void)
 			const char *result = sym[prio];
 			fprintf(stream, "%2s ", result);
 		}
-		fprintf(stream, "%c", endl);
+		fprintf(stream, "\n");
 	}
 	return *this;
 }

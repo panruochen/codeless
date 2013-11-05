@@ -21,13 +21,43 @@ enum IF_VALUE {
 	IV_TRUE    = 1,
 };
 
+static bool check_prev_operator(sym_t id)
+{
+	switch(id) {
+		case  SSID_LOGIC_OR:
+		case  SSID_LOGIC_AND:
+		case  SSID_BITWISE_OR:
+		case  SSID_BITWISE_XOR:
+		case  SSID_BITWISE_AND:
+		case  SSID_EQUAL:
+		case  SSID_NOT_EQUAL:
+		case  SSID_LESS:
+		case  SSID_GREATER:
+		case  SSID_LESS_EQUAL:
+		case  SSID_GREATER_EQUAL:
+		case  SSID_LEFT_SHIFT:
+		case  SSID_RIGHT_SHIFT:
+		case  SSID_ADDITION:
+		case  SSID_SUBTRACTION:
+		case  SSID_MULTIPLICATION:
+		case  SSID_DIVISION:
+		case  SSID_PERCENT:
+
+		case  SSID_SHARP:
+		case  SSID_LEFT_PARENTHESIS:
+			return true;
+	}
+	return false;
+}
+
+
 static inline IF_VALUE logic_not(IF_VALUE val)
 {
-	return (val == IV_UNKNOWN) ? IV_UNKNOWN : 
+	return (val == IV_UNKNOWN) ? IV_UNKNOWN :
 		(val == IV_FALSE ? IV_TRUE : IV_FALSE);
 }
 
-static bool calculate(const TOKEN& opnd1, const sym_t opr, const TOKEN& opnd2, TOKEN& result)
+static bool calculate(TOKEN& opnd1, sym_t opr, TOKEN& opnd2, TOKEN& result)
 {
 #define CMP(x,opr,val) \
 	(((x).attr == TA_UINT || (x).attr == TA_INT)&& (x).u32_val opr (val))
@@ -38,15 +68,26 @@ static bool calculate(const TOKEN& opnd1, const sym_t opr, const TOKEN& opnd2, T
 		result.u32_val = 0;
 		if(opr == SSID_LOGIC_OR && ( CMP(opnd1,!=,0) || CMP(opnd2,!=,0))) {
 			result.attr  = TA_UINT;
-			result.u32_val = true;
+			result.u32_val = 1;
+			return true;
 		}
-		if(opr == SSID_LOGIC_AND && (CMP(opnd1,==,0) || CMP(opnd2,==,0))) {
+		else if(opr == SSID_LOGIC_AND && (CMP(opnd1,==,0) || CMP(opnd2,==,0))) {
 			result.attr  = TA_UINT;
-			result.u32_val = false;
+			result.u32_val = 0;
+			return true;
 		}
-		return true;
+
+		if( !rtm_preprocess )
+			return false;
+		else {
+			opnd1.attr = TA_UINT;
+			opnd2.attr = TA_UINT;
+			opnd1.u32_val = 0;
+			opnd2.u32_val = 0;
+		}
 	}
 #undef CMP
+
 	result.attr = TA_UINT;
 	switch(opr) {
 	case SSID_LOGIC_AND:
@@ -56,28 +97,28 @@ static bool calculate(const TOKEN& opnd1, const sym_t opr, const TOKEN& opnd2, T
 		result.b_val = opnd1.b_val || opnd2.b_val;
 		break;
 	case SSID_LESS:
-		if(opnd1.attr == TA_INT && opnd2.attr == TA_INT)
-			result.b_val = opnd1.i32_val < opnd2.i32_val;
-		else
+		if(opnd1.attr == TA_UINT && opnd2.attr == TA_UINT)
 			result.b_val = opnd1.u32_val < opnd2.u32_val;
+		else
+			result.b_val = opnd1.i32_val < opnd2.i32_val;
 		break;
 	case SSID_LESS_EQUAL:
-		if(opnd1.attr == TA_INT && opnd2.attr == TA_INT)
-			result.b_val = opnd1.i32_val <= opnd2.i32_val;
-		else
+		if(opnd1.attr == TA_UINT && opnd2.attr == TA_UINT)
 			result.b_val = opnd1.u32_val <= opnd2.u32_val;
+		else
+			result.b_val = opnd1.i32_val <= opnd2.i32_val;
 		break;
 	case SSID_GREATER:
-		if(opnd1.attr == TA_INT && opnd2.attr == TA_INT)
-			result.b_val = opnd1.i32_val > opnd2.i32_val;
-		else
+		if(opnd1.attr == TA_UINT && opnd2.attr == TA_UINT)
 			result.b_val = opnd1.u32_val > opnd2.u32_val;
+		else
+			result.b_val = opnd1.i32_val > opnd2.i32_val;
 		break;
 	case SSID_GREATER_EQUAL:
-		if(opnd1.attr == TA_INT && opnd2.attr == TA_INT)
-			result.b_val = opnd1.i32_val >= opnd2.i32_val;
-		else
+		if(opnd1.attr == TA_UINT && opnd2.attr == TA_UINT)
 			result.b_val = opnd1.u32_val >= opnd2.u32_val;
+		else
+			result.b_val = opnd1.i32_val >= opnd2.i32_val;
 		break;
 	case SSID_EQUAL:
 		result.b_val = opnd1.u32_val == opnd2.u32_val;
@@ -116,51 +157,74 @@ static bool calculate(const TOKEN& opnd1, const sym_t opr, const TOKEN& opnd2, T
 	case SSID_BITWISE_NOT:
 		result.u32_val = ~ opnd1.u32_val;
 		break;
+
+	case SSID_LEFT_SHIFT:
+		result.u32_val = opnd1.u32_val << opnd2.u32_val;
+		break;
+	case SSID_RIGHT_SHIFT:
+		result.u32_val = opnd1.u32_val >> opnd2.u32_val;
+		break;
 	default:
 		return false;
 	}
 	return true;
 }
 
-static bool deduce(TCC_CONTEXT *tc, sym_t opr, TOKEN_ARRAY& opnd_stack, CC_ARRAY<sym_t>& opr_stack)
+static bool deduce(TCC_CONTEXT *tc, sym_t opr, TOKEN_ARRAY& opnd_stack,
+	CC_ARRAY<sym_t>& opr_stack, const char **errs)
 {
 	TOKEN a, b;
 	TOKEN result = { SSID_SYMBOL_X, TA_UINT };
+	static CC_STRING error_string;
 
 	if( opr == SSID_COLON ) {
 		TOKEN c;
 		sym_t tmp_opr = SSID_INVALID;
-		if(opnd_stack.size() < 3)
+		if(opnd_stack.size() < 3) {
+			*errs = "Not enough operands for '? :'";
 			return false;
+		}
 		POP(opr_stack,tmp_opr);
-		if(tmp_opr != SSID_QUESTION)
+		if(tmp_opr != SSID_QUESTION) {
+			*errs = "Invalid operator -- ':'";
 			return false;
+		}
 		POP(opnd_stack, c);
 		POP(opnd_stack, b);
 		POP(opnd_stack, a);
 		
+		debug_console << DML_DEBUG << &a << " ? " <<
+			&b << " : " << &c << '\n';
 		result = a.u32_val ? b : c;
 		goto done;
 	} else if( opr != SSID_LOGIC_NOT && opr != SSID_BITWISE_NOT ) {
-		if( ! POP(opnd_stack, b) )
-			return false;
-		if( ! POP(opnd_stack, a) )
-			return false;
-
-		debug_console << DML_DEBUG << &a << TCC_DEBUG_CONSOLE::endl;
-		debug_console << DML_DEBUG << id_to_symbol(tc->symtab, opr);
-		debug_console << DML_DEBUG << &b << TCC_DEBUG_CONSOLE::endl;
+		if( ! POP(opnd_stack, b) || ! POP(opnd_stack, a)) 
+			goto error_no_operands;
+		debug_console << DML_DEBUG << &a << "  " <<
+			id_to_symbol(tc->symtab, opr) <<
+			"  " << &b << '\n';
 	} else {
-		if( ! POP(opnd_stack, a) )
-			return false;
-		debug_console << DML_DEBUG << "! ";
-		debug_console << DML_DEBUG << &a << TCC_DEBUG_CONSOLE::endl;
+		if( ! POP(opnd_stack, a) ) 
+			goto error_no_operands;
+		debug_console << DML_DEBUG << "! " << &a << '\n';
 	}
-	if( ! calculate(a, opr, b, result) )
+	if( ! calculate(a, opr, b, result) ) {
+		error_string  = "Caculation not implented for operator '";
+		error_string += id_to_symbol(tc->symtab, opr);
+		error_string += '\'';
+		*errs = error_string.c_str();
 		return false;
+	}
 done:
 	PUSH(opnd_stack, result);
 	return true;
+
+error_no_operands:
+	error_string  = "Not enough operands for opeator '";
+	error_string += id_to_symbol(tc->symtab, opr);
+	error_string += '\'';
+	*errs = error_string.c_str();
+	return false;
 }
 
 static bool is_opr(sym_t sym)
@@ -168,13 +232,18 @@ static bool is_opr(sym_t sym)
 	return sym < SSID_SYMBOL_X;
 }
 
-int check_symbol_defined(TCC_CONTEXT *tc, sym_t id, bool reverse, TOKEN *token)
-{
-	short attr;
-	int retval;
-	MACRO_INFO *minfo = macro_table_lookup(tc->mtab, id);
 
-	if( ! preprocess_mode ) {
+int check_symbol_defined(TCC_CONTEXT *tc, const char *line, bool reverse, TOKEN *result, const char **errs)
+{
+	short attr = TA_IDENTIFIER;
+	int retval = IV_UNKNOWN;
+	TOKEN token;
+	MACRO_INFO *minfo;
+
+	if( ! read_token(tc, &line, &token, errs, 0) || *errs != NULL )
+		goto error;
+	minfo = macro_table_lookup(tc->mtab, token.id);
+	if( ! rtm_preprocess ) {
 		if(minfo == NULL) {
 			retval = IV_UNKNOWN;
 			attr   = TA_IDENTIFIER;
@@ -190,97 +259,250 @@ int check_symbol_defined(TCC_CONTEXT *tc, sym_t id, bool reverse, TOKEN *token)
 		retval  = (minfo == NULL) ? IV_FALSE : IV_TRUE;
 		retval ^= reverse;
 	}
-	if(token != NULL) {
-		token->attr    = attr;
-		token->u32_val = retval;
-		token->id      = SSID_SYMBOL_X;
+
+error:
+	if(result != NULL) {
+		result->attr    = attr;
+		result->u32_val = retval;
+		result->id      = SSID_SYMBOL_X;
 #if HAVE_NAME_IN_TOKEN
-		token->name = id_to_symbol(tc->symtab, SSID_SYMBOL_X);
+		result->name = id_to_symbol(tc->symtab, SSID_SYMBOL_X);
 #endif
 	}
-	if(preprocess_mode)
+	if(rtm_preprocess)
 		assert(retval != IV_UNKNOWN);
 	return retval;
 }
 
-static int expression_evaluate(TCC_CONTEXT *tc, TOKEN_ARRAY& tokens)
+static bool contain(const CC_ARRAY<CC_STRING>& hints, const CC_STRING& line)
 {
 	size_t i;
+	for(i = 0; i < hints.size(); i++)
+		if( strstr(line.c_str(), hints[i].c_str()) != NULL )
+			return true;
+	return false;
+}
+
+static int expression_evaluate(TCC_CONTEXT *tc, const char *line, const char **errs)
+{
+	const char *saved_line = line;
+	bool dflag = false;
+	enum {
+		STAT_INIT,
+		STAT_OPR1,
+		STAT_OPR2,
+		STAT_OPND,
+		STAT_DEFINED,  /* defined    */
+		STAT_DEFINED1, /* defined(   */
+		STAT_DEFINED2, /* defined(X  */
+	} state;
 	CC_ARRAY<sym_t> opr_stack;
 	TOKEN_ARRAY     opnd_stack;
-	bool last_is_opr;
+	sym_t last_opr = SSID_SHARP;
+	char sign;
+	const char *symbol;
+	MESSAGE_LEVEL dml = DML_DEBUG;
+	CC_STRING expansion;
 
-	debug_console << DML_DEBUG <<  "Original Expression: " << tokens << TCC_DEBUG_CONSOLE::endl << TCC_DEBUG_CONSOLE::endl ; 
-	do_macro_expansion(tc, tokens);	
-	debug_console << DML_DEBUG << "Expanded Expression: " << tokens << TCC_DEBUG_CONSOLE::endl << TCC_DEBUG_CONSOLE::endl ; 
- 
+	SKIP_WHITE_SPACES(saved_line);
+
+	dflag = contain(dx_traced_lines, line);
+
+	if(dflag)
+		runtime_console << "RAW:  " << line << '\n';
+	expansion = macro_expand(tc, line, errs);
+	if(*errs != NULL) {
+		if(dflag) {
+			runtime_console << "EXP:  " << line << '\n';
+			runtime_console << "Cannot expand due to " << *errs << '\n';
+		}
+		return IV_UNKNOWN;
+	}
+	line = expansion.c_str();
+	if(dflag) {
+		runtime_console << "EXP:  " << line << '\n';
+		dml = DML_RUNTIME;
+	}
+
 	opr_stack.push_back(SSID_SHARP);
-	last_is_opr = true;
-	for(i = 0; i < tokens.size(); i++) {
-		sym_t opr = tokens[i].id;
+	debug_console << dml << "PUSH OPR: #" << '\n' ;
+	sign = '\0';
+	state = STAT_OPR1;
+	while(1) {
+		sym_t  opr;
+		TOKEN  token;
+		const char *last_pos = line;
+
+		if( ! read_token(tc, &line, &token, errs, 0) )
+			break;
+		if( *errs != NULL )
+			goto error;
+		if( token.attr == TA_CHAR )
+			token.attr = TA_INT;
+
+		switch(state) {
+		case STAT_INIT:
+			if(is_opr(token.id))
+				state = STAT_OPR1;
+			else if(token.id == SSID_DEFINED)
+				state = STAT_DEFINED;
+			else if(token.attr == TA_IDENTIFIER)
+				state = STAT_OPND;
+			break;
+		case STAT_OPND:
+			if(is_opr(token.id))
+				state = STAT_OPR1;
+			else {
+				*errs = "Adjacent operands" ;
+				goto error;
+			}
+			break;
+		case STAT_OPR1:
+			if(is_opr(token.id))
+				state = STAT_OPR2;
+			else if(token.id == SSID_DEFINED)
+				state = STAT_DEFINED;
+			else
+				state= STAT_INIT;
+			break;
+		case STAT_OPR2:
+			if(is_opr(token.id)) {
+			} else if(token.id == SSID_DEFINED)
+				state = STAT_DEFINED;
+			else
+				state= STAT_INIT;
+			break;
+		case STAT_DEFINED:
+			if(token.id == SSID_LEFT_PARENTHESIS)
+				state = STAT_DEFINED1;
+			else if(token.attr == TA_IDENTIFIER) {
+				check_symbol_defined(tc, last_pos, false, &token, errs);
+				if(*errs != NULL)
+					goto error;
+				state = STAT_INIT;
+			}
+			break;
+		case STAT_DEFINED1:
+			if(token.attr == TA_IDENTIFIER) {
+				state = STAT_DEFINED2;
+				symbol = last_pos;
+			} else
+				goto error;
+			break;
+		case STAT_DEFINED2:
+			if(token.id == SSID_RIGHT_PARENTHESIS) {
+				check_symbol_defined(tc, symbol, false, &token, errs);
+				if(*errs != NULL)
+					goto error;
+				state = STAT_INIT;
+				opnd_stack.push_back(token);
+				goto next;
+			} else
+				goto error;
+			break;
+		}
+		if(state == STAT_DEFINED || state == STAT_DEFINED1 || state == STAT_DEFINED2)
+			goto next;
+
+		if( token.id == TA_UINT || token.id == TA_INT )
+			debug_console << dml <<  "Current: " << (size_t)token.u32_val << '\n' ;
+		else
+			debug_console << dml <<  "Current: " << id_to_symbol(tc->symtab,token.id) << '\n' ;
+		debug_console << dml <<  "OPR  Stack: " << opr_stack << '\n' ;
+		debug_console << dml <<  "OPND Stack: " << opnd_stack << '\n' << '\n' ;
+		opr = token.id;
 		if( is_opr(opr) ) {
-			sym_t opr0 = opr_stack.back();
+			sym_t opr0;
 			int result;
 
+again:
+			if(state == STAT_OPR2 && check_prev_operator(last_opr) &&
+				(opr == SSID_ADDITION || opr == SSID_SUBTRACTION)) {
+				if(opr == SSID_SUBTRACTION)
+					sign = '-';
+				continue;
+			}
+
+			opr0 = opr_stack.back();
 			result = oprmx_compare(tc->matrix, opr0, opr);
 			switch(result) {
 			case OP_EQUAL:
 				opr_stack.pop_back(opr0);
 				break;
+			
 			case OP_HIGHER:
 				POP(opr_stack, opr0);
-				if( ! deduce(tc, opr0, opnd_stack, opr_stack) )
-					return false;
-				i --;
+				if( ! deduce(tc, opr0, opnd_stack, opr_stack, errs) )
+					goto error;
+				goto again;
 				break;
+			
 			case OP_LOWER:
 				PUSH(opr_stack, opr);
 				break;
+			
 			case OP_ERROR:
-				debug_console << DML_ERROR << "Cannot compare precedence for `" << id_to_symbol(tc->symtab,opr0) << "' and `" <<
-					id_to_symbol(tc->symtab,opr) << '\'' << TCC_DEBUG_CONSOLE::endl ;
-				return IV_UNKNOWN;
+				debug_console << DML_ERROR << "Cannot compare precedence for `" <<
+					id_to_symbol(tc->symtab,opr0) << "' and `" <<
+					id_to_symbol(tc->symtab,opr) << '\'' << '\n' ;
+				goto error;
 			}
-			last_is_opr = true;
 		} else {
-			if( ! last_is_opr ) {
-				debug_console << DML_ERROR << "Adjacent operands" << TCC_DEBUG_CONSOLE::endl ;
-				return IV_UNKNOWN;
+
+			if( sign == '-' && token.attr == TA_UINT ) {
+				token.attr = TA_INT;
+				token.i32_val = - token.i32_val;
 			}
-			opnd_stack.push_back(tokens[i]);
-			last_is_opr = false;
+			opnd_stack.push_back(token);
 		}
+
+	next:
+		sign = 0;
+		last_opr = opr;
 	}
 
-	debug_console << DML_DEBUG <<  "OPR  Stack: " << opr_stack << TCC_DEBUG_CONSOLE::endl << TCC_DEBUG_CONSOLE::endl ; 
-	debug_console << DML_DEBUG <<  "OPND Stack: " << opnd_stack << TCC_DEBUG_CONSOLE::endl << TCC_DEBUG_CONSOLE::endl ; 
+	debug_console << dml <<  "OPR  Stack: " << opr_stack << '\n' << '\n' ;
+	debug_console << dml <<  "OPND Stack: " << opnd_stack << '\n' << '\n' ;
 	do {
 		sym_t opr0;
 		int result;
 
 		if( !POP(opr_stack, opr0) )
-			return IV_UNKNOWN;
+			goto error;
 		result = oprmx_compare(tc->matrix, opr0, SSID_SHARP);
 		switch(result) {
 		case OP_EQUAL:
 			break;
 		case OP_HIGHER:
-			if( ! deduce(tc, opr0, opnd_stack, opr_stack) )
-				return IV_UNKNOWN;
+			if( ! deduce(tc, opr0, opnd_stack, opr_stack, errs) )
+				goto error;
 			break;
 		default:
-			debug_console << DML_ERROR << __func__ << ':' << (size_t)__LINE__ << ": bad expression" << TCC_DEBUG_CONSOLE::endl;
-			return IV_UNKNOWN;
+			debug_console << DML_ERROR << __func__ << ':' << (size_t)__LINE__ << ": bad expression" << '\n';
+			*errs = "[1] Bad expression";
+			goto error;
 		}
 	} while( opr_stack.size() != 0 );
 
 	if( opnd_stack.size() != 1 ) {
-		debug_console << DML_ERROR << __func__ << ':' << (size_t)__LINE__ << ": Opnd stack size: " << opnd_stack.size() << TCC_DEBUG_CONSOLE::endl;
-		return IV_UNKNOWN;
+		*errs = "[2] Bad expression";
+		debug_console << DML_ERROR << __func__ << ':' << (size_t)__LINE__ << ": Opnd stack size: " << opnd_stack.size() << '\n';
+		goto error;
 	}
-	if( opnd_stack.back().attr == TA_IDENTIFIER )
-		return IV_UNKNOWN;
-	return !!opnd_stack.back().i32_val;		
+
+	if( opnd_stack.back().attr == TA_IDENTIFIER ) {
+		return rtm_preprocess ? IV_FALSE : IV_UNKNOWN;
+	}
+	debug_console << dml << "Numberic Value: " << (ssize_t)opnd_stack.back().i32_val << '\n';
+	return !!opnd_stack.back().i32_val;
+
+error:
+//	assert(*errs != NULL);
+	if(*errs == NULL)
+		*errs = "Unknown errors";
+	printf("LINE:    %s\n", saved_line);
+	debug_console << DML_ERROR << *errs << '\n' ;
+	return IV_UNKNOWN;
 }
 
 CC_STRING ConditionalParser::handle_elif(int mode)
@@ -297,7 +519,7 @@ CC_STRING ConditionalParser::handle_elif(int mode)
 		trailing = p;
 	}
 
-	if(mode == 2) 
+	if(mode == 2)
 		output = "#else";
 	else if(mode == 1){
 		p = raw_line.c_str();
@@ -362,19 +584,20 @@ error:
 	return filename;
 }
 
-const char * ConditionalParser::run(sym_t preprocessor, const char *line, TOKEN_ARRAY& tokens)
+const char * ConditionalParser::run(sym_t preprocessor, const char *line, bool *anything_changed)
 {
-	const char *retval = NULL;
+	const char *retval = NULL, *errs;
 	IF_VALUE result = IV_FALSE;
 	CC_STRING new_line;
 	const char *output = raw_line.c_str();
 
+	* anything_changed = false;
 	if(preprocessor == SSID_SHARP_DEFINE) {
 		if(current.curr_value == IV_TRUE) {
 			const char *p;
 			CC_STRING word;
 			sym_t mid;
-	
+
 			p = line;
 			SKIP_WHITE_SPACES(p);
 			if( isalpha(*p) || *p == '_' ) {
@@ -383,65 +606,48 @@ const char * ConditionalParser::run(sym_t preprocessor, const char *line, TOKEN_
 					word += *p++;
 				mid = symtab_insert(tc->symtab, word.c_str());
 				MACRO_INFO *mi = (MACRO_INFO*) malloc(sizeof(*mi));
-				mi->handled = false;
-				mi->line = strdup(line);
-				mi->priv = (void *)this;
+				mi->id     = SSID_INVALID;
+				mi->line   = strdup(line);
+				mi->define = NULL;
 				macro_table_insert(tc->mtab, mid, mi);
 				assert(macro_table_lookup(tc->mtab, mid) != NULL);
+				if( dx_traced_macros.size() > 0 && find(dx_traced_macros, word)  )
+					runtime_console << current_file->name << ':' << current_file->line << ": " <<
+						raw_line << '\n';
 			}
 		}
 		if(current.curr_value == IV_FALSE)
 			goto done;
 		else
 			goto print_and_exit;
-	} else if(preprocessor != SSID_INVALID && preprocessor != SSID_SHARP_INCLUDE && preprocessor != SSID_SHARP_INCLUDE_NEXT ) {
-		retval = split(preprocessor, line, tokens);
-/*		fprintf(stderr, "LINE: %s\n", line);
-		for(size_t i = 0; i < tokens.size(); i++) {
-			fprintf(stderr, "[%u]:  %s\n", i, id_to_symbol(tc->symtab,tokens[i].id));
-		}
-		fprintf(stderr, "\n\n");*/
-		if(retval != NULL) {
-			runtime_console << __FILE__ ":" << (size_t)__LINE__ << BASIC_CONSOLE::endl;
-			runtime_console << current_file->name << ':' << current_file->line << ": " << retval << BASIC_CONSOLE::endl ;
-			return retval;
-		}
-	}
-
-#define WARN_1() \
-	debug_console << current_file->name << ':' << current_file->line << ": " << raw_line.c_str() << '\n'
+	} 
 	switch(preprocessor) {
 		case SSID_SHARP_IF:
 			if( current.curr_value != IV_FALSE ) {
-				result = (IF_VALUE) expression_evaluate(tc, tokens);
+				result = (IF_VALUE) expression_evaluate(tc, line, &errs);
 			}
 			goto handle_if_branch;
 		case SSID_SHARP_IFNDEF:
 			if( current.curr_value != IV_FALSE ) {
-				result = (IF_VALUE) check_symbol_defined(tc, tokens[0].id, true, NULL);
+				result = (IF_VALUE) check_symbol_defined(tc, line, true, NULL, &errs);
 			}
 			goto handle_if_branch;
 		case SSID_SHARP_IFDEF:
 			if( current.curr_value != IV_FALSE ) {
-				result = (IF_VALUE) check_symbol_defined(tc, tokens[0].id, false, NULL);
+				result = (IF_VALUE) check_symbol_defined(tc, line, false, NULL, &errs);
 			}
 handle_if_branch:
-			if( preprocess_mode && result == IV_UNKNOWN) {
+			if( rtm_preprocess && result == IV_UNKNOWN) {
 				char buf[32];
-				last_error = current_file->name;
-				last_error += ':';
-				sprintf(buf, "%u", current_file->line);
-				last_error += buf;
-				last_error += ':';
-				last_error += " Cannot evaluate (A): ";
-				last_error += raw_line;
+			prepare_to_exit:
+				last_error += errs;
 				retval = last_error.c_str();
 				goto done;
 			}
 
 			PUSH(conditionals, current);
 			if( current.curr_value != IV_FALSE ) {
-				current.if_value   = 
+				current.if_value   =
 				current.curr_value = result;
 				current.elif_value = IV_NS;
 				if(current.if_value != IV_UNKNOWN) output = NULL;
@@ -451,20 +657,10 @@ handle_if_branch:
 		case SSID_SHARP_ELIF:
 			if( under_false_conditional() )
 				goto done;
-			result = (IF_VALUE) expression_evaluate(tc, tokens);
-			if(preprocess_mode && result == IV_UNKNOWN) {
-				char buf[32];
-				last_error = current_file->name;
-				last_error += ':';
-				sprintf(buf, "%u", current_file->line);
-				last_error += buf;
-				last_error += ':';
-				last_error += " Cannot evaluate (B): ";
-				last_error += raw_line;
-				retval = last_error.c_str();
-
-				goto done;
-			}
+			result = (IF_VALUE) expression_evaluate(tc, line, &errs);
+			if(rtm_preprocess && result == IV_UNKNOWN)
+				goto prepare_to_exit;
+			
 			/*
 			 *  Transformation on the condition of:
 			 *  1) #if 0
@@ -516,32 +712,46 @@ handle_if_branch:
 				goto done;
 			else if(current.curr_value == IV_TRUE) {
 				if(preprocessor == SSID_SHARP_DEFINE)
-					/*handle_define(tc, tokens)*/;
+					;
 				else if(preprocessor == SSID_SHARP_UNDEF)
-					handle_undef(tc, tokens[0]);
-				else if( preprocess_mode && (preprocessor == SSID_SHARP_INCLUDE || preprocessor == SSID_SHARP_INCLUDE_NEXT) ) {
+					handle_undef(tc, line);
+				else if( rtm_preprocess && (preprocessor == SSID_SHARP_INCLUDE || preprocessor == SSID_SHARP_INCLUDE_NEXT) ) {
 					CC_STRING tmp;
+					const char *new_pos;
 					const char *path;
 					char style;
 					bool in_sys_dir;
+					
+					new_pos = line;
+					if( take_include_token(tc, &new_pos, &errs) ) {
+						join(tmp, line, new_pos);
+						path = tmp.c_str();
+						tmp = get_include_file_name(path, style);
+					} else {
+						tmp = macro_expand(tc, line, &errs);
+						if(errs != NULL) {
+							last_error = errs;
+							retval = last_error.c_str();
+							goto done;
+						}
+						path = tmp.c_str();
+						tmp = get_include_file_name(path, style);
+					}
 
-					tmp = get_include_file_name(line, style);
 					if(tmp.size() == 0) {
 						last_error = "Error: ";
 						last_error = raw_line;
 						retval = last_error.c_str();
 						goto done;
 					}
-					path = check_file(tmp.c_str(), style == '"', preprocessor == SSID_SHARP_INCLUDE_NEXT, &in_sys_dir);
+					path = check_file(tmp.c_str(), current_file->name.c_str(), style == '"', preprocessor == SSID_SHARP_INCLUDE_NEXT, &in_sys_dir);
 					if(path != NULL) {
 						FILE *fp = fopen(path, "rb");
 						if(fp != NULL) {
 							REAL_FILE *file = new REAL_FILE;
 							file->set_fp(fp, path);
-							/* Usually, we ignore those header files in the `system' search directories */
 							if(dep_fp != NULL && ! in_sys_dir) {
-//								fprintf(dep_fp, "//-%s:%d: %s\n", current_file->name.c_str(), current_file->line, raw_line.c_str());
-								fprintf(dep_fp, "#include  ", path);
+								fprintf(dep_fp, "#include  ");
 								if( path[0] != '/' ) {
 									char cwd[260];
 									getcwd(cwd, sizeof(cwd));
@@ -567,42 +777,11 @@ handle_if_branch:
 print_and_exit:
 	if( outdev != NULL && output != NULL && have_output ) {
 		fprintf(outdev, "%s", output);
-	}
+	} else
+		*anything_changed = true;
 done:
 	comment_start = -1;
 	return retval;
-}
-
-
-#define IS_EOL(c)      ((c) == '\n')
-#define ishexdigit(c)  (isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
-
-static TOKEN new_token(TCC_CONTEXT *tc, const CC_STRING& name, short attr = TA_OPERATOR)
-{
-	TOKEN token;
-
-	token.flag_flm = 0;
-	token.id   = symtab_insert(tc->symtab, name.c_str());
-	token.attr = attr;
-#if HAVE_NAME_IN_TOKEN
-	token.name = id_to_symbol(tc->symtab, token.id);
-	token.base = 0;
-#endif
-	return token;
-}
-
-static TOKEN new_token(TCC_CONTEXT *tc, const CC_STRING& name, int base, const char *format)
-{
-	TOKEN token;
-
-	token.id   = symtab_insert(tc->symtab, name.c_str());
-	token.attr = TA_UINT;
-#if HAVE_NAME_IN_TOKEN
-	token.name = strdup(name.c_str());
-	token.base = base;
-#endif
-	sscanf(name.c_str(), format, &token.u32_val);
-	return token;
 }
 
 void ConditionalParser::initialize(TCC_CONTEXT *tc, const char **keywords, size_t num_keywords, GENERIC_FILE *infile,
@@ -643,40 +822,6 @@ static inline int get_sign(const TOKEN& token)
 	return 0;
 }
 
-static void get_number(TCC_CONTEXT *tc, TOKEN_ARRAY& tokens, CC_STRING& cword, int base, const char *format)
-{
-	if(cword.size() > 0) {
-		TOKEN token;
-		size_t n;
-		int sign;
-
-		token = new_token(tc, cword, base, format);
-		n = tokens.size();
-		if((n == 1 && (sign = get_sign(tokens[0])) != 0) ||
-			(n > 1 && is_arithmetic_operator(tokens[n-2]) && (sign = get_sign(tokens[n-1])) != 0)) {
-			if(sign < 0) {
-				token.u32_val = -token.u32_val;
-				token.attr = TA_INT;
-			}
-			tokens[n-1] = token;
-		} else 
-			tokens.push_back(token);
-		cword.clear();
-	}
-}
-
-
-static void get_token(TCC_CONTEXT *tc, TOKEN_ARRAY& tokens, CC_STRING& cword, short attr)
-{
-	if(cword.size() > 0) {
-		TOKEN token;
-		token = new_token(tc, cword, attr);
-		tokens.push_back(token);
-		cword.clear();
-	}
-}
-
-
 sym_t ConditionalParser::preprocessed_line(const char *line, const char **pos)
 {
 	const char *p;
@@ -684,8 +829,10 @@ sym_t ConditionalParser::preprocessed_line(const char *line, const char **pos)
 
 	p = line;
 	SKIP_WHITE_SPACES(p);
-	if( *p++ != '#' )
+	if( *p++ != '#' ) {
+		*pos = p;
 		return SSID_INVALID;
+	}
 	word = '#';
 
 	SKIP_WHITE_SPACES(p);
@@ -699,312 +846,13 @@ sym_t ConditionalParser::preprocessed_line(const char *line, const char **pos)
 	return SSID_INVALID;
 }
 
-static bool identifier_char(char c)			
-{
-	return isalpha(c) || isdigit(c) || c == '_';
-}
-
-static CC_STRING get_format(const CC_STRING& s)
-{
-	CC_STRING fmt;
-
-	fmt = '%';
-	
-	switch(s.size()) {
-	case 3:
-		fmt += s[2];
-	case 2:
-		fmt += s[1];
-	case 1:
-		fmt += s[0];
-		break;
-	default:
-		runtime_console << "Bad format:" << s << BASIC_CONSOLE::endl;
-		assert(0);
-	}
-	return fmt;
-}
-
-#define GET_TOKEN(attr)              do{ \
-	get_token(tc,tokens,cword,attr);     \
-	/*cword.clear();*/                   \
-	state = SM_STATE_INITIAL;            \
-	p--;                                 \
-} while(0)
-
-
-#define GET_NUMBER(base,format)              do{ \
-	get_number(tc,tokens,cword,base,format);     \
-	/*cword.clear();*/                           \
-	state = SM_STATE_INITIAL;                    \
-	p--;                                         \
-} while(0)
-
-
-/*  Split the input line into tokens if this line contains proprocessing contents.
- *
- *  Returns a pointer to the error messages on failure, or nil on success.
- */
-const char * ConditionalParser::split(sym_t tid, const char *line, TOKEN_ARRAY& tokens)
-{
-	enum {
-		SM_STATE_INITIAL,
-		SM_STATE_IDENTIFIER,
-		SM_STATE_NUM0,
-		SM_STATE_0X,
-		SM_STATE_DEC_NUM,
-		SM_STATE_OCT_NUM,
-		SM_STATE_HEX_NUM,
-		SM_STATE_NUM_POSTFIX1,
-		SM_STATE_NUM_POSTFIX2,
-		SM_STATE_SINGLE_VBAR,
-		SM_STATE_SINGLE_AND,
-		SM_STATE_SINGLE_NOT,
-		SM_STATE_SINGLE_EQUAL,
-		SM_STATE_ANGLE_BRACKET,
-		SM_STATE_ADDITION,
-		SM_STATE_SUBTRACTION,
-	} state;
-	const char *retval = NULL;
-	char c;
-	const char *p;
-	int base;
-	CC_STRING format;
-
-	/* Initialize */
-	state = SM_STATE_INITIAL;
-	cword.clear();	
-	p = line;
-	SKIP_WHITE_SPACES(p);
-
-	for(; (c = *p) != 0; p++) {
-
-		switch(state) {
-		case SM_STATE_INITIAL:
-			if( isalpha(c) || c == '_' ) {
-				cword += c;
-				state = SM_STATE_IDENTIFIER;
-			} else if( c == '0' ) {
-				cword += c;
-				state = SM_STATE_NUM0;
-			} else if( c >= '1' && c <= '9' ) { 
-				cword += c;
-				state = SM_STATE_DEC_NUM;
-			} else if(isspace(c) || c == '\n') {
-			} else if(c == '|') {
-				state = SM_STATE_SINGLE_VBAR ;
-			} else if(c == '&') {
-				state = SM_STATE_SINGLE_AND;
-			} else if(c == '!') {
-				state = SM_STATE_SINGLE_NOT;
-			} else if(c == '=') { 
-				state = SM_STATE_SINGLE_EQUAL;
-			} else if (c == '<' || c == '>') {
-				state = SM_STATE_ANGLE_BRACKET;
-				cword = c;
-			} else if(c == '+' ) {
-				state = SM_STATE_ADDITION;
-				cword = c;
-			} else if(c == '-' ) {
-				state = SM_STATE_ADDITION;
-				cword = c;
-			} 
-			else if(c == '*' || c == '/' || c == '%' || c == '(' || c == ')' || c == '?' || c == ':'
-				|| c == ',' ) {
-				char name[2];
-				name[0] = c;
-				name[1] = '\0';
-				tokens.push_back(new_token(tc, name));
-				state = SM_STATE_INITIAL;
-			} else {
-				last_error  = "Invalid operator: ";
-				last_error += c;
-				retval = last_error.c_str();
-				goto error;
-			}
-			break;
-
-		case SM_STATE_IDENTIFIER:
-			if( identifier_char(c) ) 
-				cword += c;
-			else {
-				GET_TOKEN(TA_IDENTIFIER);
-				if(c == '(' && tokens.size() == 1 && tid == SSID_SHARP_DEFINE ) {
-					/* Macro with parameters */;
-					tokens[0].attr = TA_IDENTIFIER;
-					tokens[0].flag_flm = 1;
-				}
-			}
-			break;
-
-		case SM_STATE_NUM0:
-			if(c == 'X' || c == 'x') {
-				cword += c;
-				state = SM_STATE_0X;
-			} else if(c >= '0' && c <= '7') {
-				cword += c;
-				state = SM_STATE_OCT_NUM;
-			} else if(c == '8' || c == '9') {
-				last_error  = "Invalid number: ";
-				last_error += c;
-				retval = last_error.c_str();
-				goto error;
-			} else
-				GET_NUMBER(10,"%u");
-			break;
-		
-		case SM_STATE_OCT_NUM:
-			if(c >= '0' && c <= '7')
-				cword += c;
-			else
-				GET_NUMBER(8,"%o");
-			break;
-
-		case SM_STATE_0X:
-			if( ishexdigit(c) ) {
-				cword += c;
-				state = SM_STATE_HEX_NUM;
-			} else {
-				retval = "Invalid token 0x";
-				goto error;
-			}
-			break;
-
-		case SM_STATE_HEX_NUM:
-			if( ishexdigit(c) )
-				cword += c;
-			else if(c == 'u' || c == 'U') {
-				base = 16;
-				format = 'x';
-				state = SM_STATE_NUM_POSTFIX1;
-			} else if(c == 'L' || c == 'L') {
-				base = 16;
-				format = 'x';
-				state = SM_STATE_NUM_POSTFIX2;
-			} else {
-				GET_NUMBER(16,"%x");
-			}
-			break;
-
-		case SM_STATE_DEC_NUM:
-			if( isdigit(c) )
-				cword += c;
-			else if(c == 'u' || c == 'U') {
-				state = SM_STATE_NUM_POSTFIX1;
-				base = 10;
-				format = 'u';
-			} else if(c == 'L' || c == 'l') {
-				state = SM_STATE_NUM_POSTFIX2;
-				base = 10;
-				format = 'd';
-			} else
-				GET_NUMBER(10,"%u");
-			break;
-
-		case SM_STATE_NUM_POSTFIX1:
-			if(c == 'L' || c == 'l') {
-				format = 'l' + format ;
-				state = SM_STATE_NUM_POSTFIX2;
-			} else
-				GET_NUMBER(base, get_format(format).c_str());
-			break;
-		case SM_STATE_NUM_POSTFIX2:
-			if(c == 'L' || c == 'l') {
-				format = 'l' + format ;
-				get_number(tc, tokens, cword, base, get_format(format).c_str());
-				state = SM_STATE_INITIAL;
-			} else
-				GET_NUMBER(base, get_format(format).c_str());
-			break;
-		
-		case SM_STATE_SINGLE_VBAR:
-			if(c == '|') {
-				tokens.push_back(new_token(tc,"||"));
-				state = SM_STATE_INITIAL;
-			} else {
-				cword = '|';
-				GET_TOKEN(TA_OPERATOR);
-			}
-			break;
-
-		case SM_STATE_SINGLE_AND:
-			if(c == '&') {
-				tokens.push_back(new_token(tc, "&&"));
-				state = SM_STATE_INITIAL;
-			} else {
-				cword = '&';
-				GET_TOKEN(TA_OPERATOR);
-			}
-			break;
-
-		case SM_STATE_SINGLE_NOT: /* STATE(!) */
-			if(c == '=') {
-				tokens.push_back(new_token(tc, "!="));
-				state = SM_STATE_INITIAL;
-			} else {
-				cword = '!';
-				GET_TOKEN(TA_OPERATOR);
-			}
-			break;
-
-		case SM_STATE_SINGLE_EQUAL: /* STATE(=) */
-			if(c == '=') {
-				tokens.push_back(new_token(tc,"=="));
-				state = SM_STATE_INITIAL;
-			} else {
-				GET_TOKEN(TA_OPERATOR);
-			}
-			break;
-
-		case SM_STATE_ANGLE_BRACKET: /* STATE(<>) */
-			if(c == '=') {
-				cword += c;
-				tokens.push_back(new_token(tc, cword));
-				cword.clear();
-				state = SM_STATE_INITIAL;
-			} else {
-				GET_TOKEN(TA_OPERATOR);
-			}
-			break;
-
-		case SM_STATE_ADDITION:
-			if(c == '+') {
-				retval = "Invalid ++ operator";
-				goto error;
-			} else {
-				GET_TOKEN(TA_OPERATOR);
-			}
-			break;
-
-		case SM_STATE_SUBTRACTION:
-			if(c == '-') {
-				retval = "Invalid -- operator";
-				goto error;
-			} else {
-				GET_TOKEN(TA_OPERATOR);
-			}
-			break;
-		}
-	}
-
-#if 0
-	size_t i;
-	for(i = 0; i < tokens.size(); i++)
-		fprintf(stderr, "**  %s\n", tokens[i].name);
-#endif
-
-error:
-	return retval;
-}
-
-
 /*  Parse the input file and update the global symbol table and macro table,
  *  output the stripped file contents to devices if OUTFILE is not nil.
  *
  *  Returns a pointer to the error messages on failure, or nil on success.
  */
 const char *ConditionalParser::do_parse(TCC_CONTEXT *tc, const char **keywords, size_t num_keywords,
-	GENERIC_FILE *infile, const char *outfile, FILE *depf)
+	GENERIC_FILE *infile, const char *outfile, FILE *depf, bool *anything_changed)
 {
 	int last_levels_num = 0;
 	FILE *outs = stdout;
@@ -1014,6 +862,8 @@ const char *ConditionalParser::do_parse(TCC_CONTEXT *tc, const char **keywords, 
 	const char *retval = NULL;
 	bool loop ;
 
+	if(anything_changed)
+		*anything_changed = false;
 	if( ! infile->open() ) {
 		snprintf(message, sizeof(message), "Cannot open %s", infile->name.c_str());
 		return message;
@@ -1043,7 +893,6 @@ const char *ConditionalParser::do_parse(TCC_CONTEXT *tc, const char **keywords, 
 			else
 				flag_popup = true;
 			c = '\n';
-
 			goto handle_last_line;
 		}
 
@@ -1057,9 +906,9 @@ const char *ConditionalParser::do_parse(TCC_CONTEXT *tc, const char **keywords, 
 			else if(c == '\\')
 				state = 5;
 			break;
-		
+
 		case 1:
-			if(c == '/') { 
+			if(c == '/') {
 				state = 2;
 				mark_comment_start();
 			} else if(c == '*') {
@@ -1068,17 +917,17 @@ const char *ConditionalParser::do_parse(TCC_CONTEXT *tc, const char **keywords, 
 			} else
 				state = 0;
 			break;
-		
+
 		case 2: /* line comment */
 			if(c == '\n')
 				state = 0;
 			break;
-		
+
 		case 3: /* block comments */
 			if(c == '*')
 				state = 4;
 			break;
-		
+
 		case 4: /* asterisk */
 			if(c == '/')
 				state = 0;
@@ -1093,7 +942,7 @@ const char *ConditionalParser::do_parse(TCC_CONTEXT *tc, const char **keywords, 
 				state = 0;
 			break;
 		}
-		
+
 		if(c == '\n') {
 			current_file->line++;
 		}
@@ -1103,19 +952,28 @@ handle_last_line:
 			if( prev == 1)
 				line.push_back('/');
 			if(prev != 4 && prev != 5) {
+				bool cx;
 				line.push_back(c);
 				if(c == '\n') {
-					TOKEN_ARRAY tokens;
 					const char *pos;
 					sym_t id = preprocessed_line(line.c_str(), &pos);
-					retval = run(id, pos, tokens);
+					/*runtime_console << current_file->name << ':' <<  current_file->line 
+						<< ":   " << raw_line << '\n' ;*/
+					retval = run(id, pos, &cx);
 					if( retval != NULL) {
-						runtime_console << __FILE__ ":" << (size_t)__LINE__ << BASIC_CONSOLE::endl;
-						runtime_console << current_file->name << ':' <<  current_file->line << ": " << retval << BASIC_CONSOLE::endl ;
+						runtime_console << __FILE__ ":" << (size_t)__LINE__ << '\n';
+						runtime_console << current_file->name << ':' <<  current_file->line << ":   " << raw_line <<
+							retval << '\n' ;
+
+						debug_console << DML_ERROR << __FILE__ ":" << (size_t)__LINE__ << '\n';
+						debug_console << DML_ERROR << current_file->name << ':' << 
+							current_file->line << ":   " << raw_line <<			retval << '\n' ;
 						goto done;
 					}
 					raw_line.clear();
 					line.clear();
+					if(anything_changed)
+						*anything_changed |= cx;
 				}
 			}
 		}
@@ -1150,11 +1008,4 @@ done:
 }
 
 
-const TOKEN g_unevaluable_token = { 
-	SSID_SYMBOL_X, TA_IDENTIFIER, {0},
-#if HAVE_NAME_IN_TOKEN
-	0,
-	"*X*"
-#endif
-};
 
