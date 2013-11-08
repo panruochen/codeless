@@ -337,7 +337,6 @@ const char *check_file(const char *inc_file, const char *cur_file, bool include_
 bool add_ignore_pattern(const char *pattern);
 bool check_file_ignored(const char *filename);
 
-extern CC_STRING host_cc;
 extern CC_ARRAY<CC_STRING>  dx_traced_macros, dx_traced_lines;
 extern BASIC_CONSOLE runtime_console;
 extern DEBUG_CONSOLE debug_console;

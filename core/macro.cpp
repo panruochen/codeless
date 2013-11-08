@@ -180,9 +180,11 @@ done:
 			if( (*xc) & XF_MACRO_PARAM ) {
 				if(*xc & XF_MACRO_PARAM2)
 					s += margs[(uint8_t)*xc];
-				else if(*xc & XF_MACRO_PARAM1)
-					;
-				else {
+				else if(*xc & XF_MACRO_PARAM1) {
+					s += '"';
+					s += margs[(uint8_t)*xc];
+					s += '"';
+				} else {
 					const char *p = margs[(uint8_t)*xc].c_str();
 					s += generic_macros_expand(ehc, &p);
 				}
@@ -387,11 +389,9 @@ static void handle_define(EH_CONTEXT *ehc, sym_t mid, MACRO_INFO *minfo)
 						p0 = p1;
 						if( ! read_token(ehc->tc, &p1, &token, &ehc->errs, 0) )
 							break;
-						if( prefix.size() > 0 && (para_id = find(token.id, para_list)) >= 0 ) {
-							if(prefix.size() == 1) 
-								*xc++ = para_id | XF_MACRO_PARAM | XF_MACRO_PARAM1;
-							else
-								*xc++ = para_id | XF_MACRO_PARAM | XF_MACRO_PARAM2;
+						if( (para_id = find(token.id, para_list)) >= 0 ) {
+							static const XCHAR flags[] = { 0, XF_MACRO_PARAM1, XF_MACRO_PARAM2 };
+							*xc++ = para_id | XF_MACRO_PARAM | flags[prefix.size()];
 						} else {
 							join(&xc, p0, p1);
 						}

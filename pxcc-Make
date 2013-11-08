@@ -1,5 +1,231 @@
 #!/usr/bin/env python
 
+import re
+import os
+import sys
+import subprocess
+import getopt
+
+# The Host Compiler
+Y_CC    = None
+# The PXCC Tool
+Y_PXCC  = None
+
+Y_DEP_FILE        = None
+Y_VERBOSE_COMMAND = None
+Y_EXEC_SCRIPT     = None
+Y_CL_FILE         = None
+Y_IGNORE          = ''
+
+#  Run shell commands and get outputs into a string
+def run_command_sync(command):
+    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    return out.decode("utf-8")
+
+#  Run shell commands and print real time outputs to the console
+def exec_command_realtime(commands, _exec = None):
+	process = subprocess.Popen(commands, bufsize = 1024, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, executable=_exec)
+	while process.poll() is None:
+		line = process.stdout.readline()
+		if line:
+			sys.stdout.write(line.decode('utf-8'))
+			sys.stdout.flush()
+	if process.returncode:
+		null = None
+
+def to_abs_path(x) :
+	if x[0:1] != '/' :
+		return os.getcwd() + '/' + x
+	return x
+
+
+py_scripts = '''def compare_argument_against_option(a, o) :
+	if a + '=' == o :
+		return 2
+	if a.find(o) == 0 :
+		return 1
+	return 0
+
+def select_options(short_options, long_options, args) :
+	new_args = [ ]
+	others = ''
+	need_param = False
+	for a in args :
+		if need_param :
+			new_args.append(a)
+			need_param = False
+			continue
+		matched = False
+		n = 0
+		if a[0] == '-' :
+			if a[1] == '-' :
+				n = 2
+			else :
+				n = 1
+			for o in long_options :
+				result = compare_argument_against_option(a[n:], o)
+				if result > 0 :
+					new_args.append(a)
+					if result == 2 :
+						need_param = True
+					matched = True
+					break
+			if not matched :
+				i = 0
+				size = len(short_options)
+				while i < size :
+					o = short_options[i]
+					if o == a[1] :
+						if i+1 < size and short_options[i+1] == ':' :
+							new_args.append(a)
+							if len(a) == 2 :
+								need_param = True
+							i += 1
+							matched = True
+						elif len(a) == 2 :
+							new_args.append(a)
+							matched = True
+						break
+					i += 1
+		if not matched :
+			others += ' ' + a
+	return new_args, others
+
+'''
+
+#================================================
+#
+#  The main entry
+#
+#================================================
+
+short_options = ''
+long_options = (["y-cc=", "y-xcc=", "y-print-dependency=",
+	"y-verbose-command", "y-ignore=", 'y-save-script=', 'y-print-command-line='])
+
+exec(py_scripts)
+
+a, make_args = select_options(short_options, long_options, sys.argv[1:])
+
+#print(a)
+#print('--------------------------------')
+#print(make_args)
+#print('--------------------------------')
+#exit(0)
+try:
+    opts, args = getopt.gnu_getopt(a, short_options, long_options)
+except getopt.GetoptError as err:
+	print(str(err), file=sys.stderr)
+	exit(2)
+
+#print(opts)
+#print(args)
+
+for o, a in opts:
+	if o == '--y-cc':
+		Y_CC = a
+	elif o == '--y-xcc':
+		Y_PXCC = to_abs_path(a)
+	elif o == '--y-print-dependency' :
+		Y_DEP_FILE = to_abs_path(a)
+	elif o == '--y-verbose-command' :
+		Y_VERBOSE_COMMAND = 'export MAKE_TEMPLATE_VERBOSE=1\n'
+	elif o == '--y-ignore' :
+		Y_IGNORE += '--y-ignore=\''
+		Y_IGNORE += a
+		Y_IGNORE += '\' '
+	elif o == '--y-save-script' :
+		Y_EXEC_SCRIPT = to_abs_path(a)
+	elif o == '--y-print-command-line' :
+		Y_CL_FILE = to_abs_path(a)
+
+if Y_PXCC == None:
+	Y_PXCC = to_abs_path(os.path.dirname(sys.argv[0]) + "/pxcc.exe")
+
+#if os.path.isfile(Y_CC) and  IS_IXUSR(os.stat(Y_CC).st_mode) :
+Y_ORIG_CC = run_command_sync('which ' + Y_CC).rstrip('\r\n')
+if Y_ORIG_CC == '':
+	print("No such file: ", Y_CC, file=sys.stderr)
+	exit(2)
+	
+final_commands = ''
+if Y_CC == "armcc" :
+	cmd_get_search_dirs = '$(if [ -n "${ARMCC41INC}" ]; then echo "-y-I=${ARMCC41INC}"; fi)'
+elif Y_CC == "gcc" :
+	cmd_get_search_dirs = '''$(while read line; do
+     if [ "$line" = "#include <...> search starts here:" ]; then
+       flag=y
+     elif [ "$line" = "End of search list." ]; then
+       return
+     elif [ x$flag = xy ]; then
+       echo " -y-I=$line"
+     fi
+  done <<< "$('''
+	cmd_get_search_dirs += Y_ORIG_CC
+	cmd_get_search_dirs += ''' -xc -E -v /dev/null 2>&1)"
+) \\
+'''
+
+final_commands += 'function ' + Y_CC + '()\n{\n    '
+
+cmd_get_predefines  =  '$(' + Y_ORIG_CC 
+cmd_get_predefines +=  ' $(python -c "$(cat << \'__EOF__\'\n'
+cmd_get_predefines +=  py_scripts
+cmd_get_predefines += '''
+import sys
+short_options = "O:"
+long_options  = ["cpu="]
+o, a  = select_options(short_options, long_options, sys.argv[1:])
+for x in o :
+	print(x, end=' ')
+
+__EOF__
+)" "$@")  '''
+if Y_CC == 'armcc':
+	cmd_get_predefines +=  '--list_macros /dev/null)'
+elif Y_CC == "gcc" :
+	cmd_get_predefines +=  '-E -xc -dM /dev/null)'
+	
+#final_commands += cmd_get_predefines
+final_commands += Y_PXCC
+#final_commands += " -y-get-macros=\"${sys_predefines}\" \\\n"
+final_commands += ' -y-get-macros="' + cmd_get_predefines + '" \\\n'
+final_commands += " " + cmd_get_search_dirs
+
+if Y_DEP_FILE != None :
+	final_commands += ' -y-print-dependency=' + Y_DEP_FILE
+if Y_CL_FILE != None :
+	final_commands += ' -y-print-command-line=' + Y_CL_FILE
+final_commands += ' -y-preprocess -y-debug=0 -y-in-place=.bak'
+final_commands += ' ' + Y_IGNORE
+final_commands += '\\\n'
+final_commands += ' $* || return $?\n'
+final_commands += '    ' + Y_ORIG_CC
+final_commands += ' $*\n}\n'
+if Y_VERBOSE_COMMAND != None :
+	final_commands += Y_VERBOSE_COMMAND
+final_commands += 'export -f ' + Y_CC + '\n' 
+if Y_CL_FILE != None :
+	final_commands += '> ' + Y_CL_FILE  + '\n'
+if Y_DEP_FILE != None :
+	final_commands += '> ' + Y_DEP_FILE + '\n'
+final_commands += run_command_sync('which make').rstrip('\r\n') + make_args + '\n'
+
+
+if Y_EXEC_SCRIPT == None :
+	print(final_commands)
+	exec_command_realtime(final_commands, '/bin/bash')
+else :
+	fd = open(Y_EXEC_SCRIPT, "w")
+	if fd != None :
+		fd.write(final_commands)
+		fd.close()
+		os.chmod(Y_EXEC_SCRIPT, 493)
+		exec_command_realtime(Y_EXEC_SCRIPT, '/bin/bash')
+
+
+
 # ARMCC 3.1 Predefined Macros
 '''
 #define __STDC__ 1
@@ -27,253 +253,5 @@
 #define __OPTIMISE_LEVEL 2
 #define __SOFTFP__ 1
 '''
-
-import re
-import os
-import sys
-import subprocess
-import getopt
-import readline
-
-# The Host Compiler
-Y_CC    = None
-# The PXCC Tool
-Y_PXCC  = None
-
-Y_DEP_FILE        = None
-Y_CFLAGS_FILE     = None
-Y_VERBOSE_COMMAND = None
-Y_EXEC_SCRIPT     = None
-
-TARGET_DIRECTORY = ''
-Y_IGNORE         = ''
-
-#  Run shell commands and get outputs into a string
-def run_command_sync(command):
-    p = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
-    out, err = p.communicate()
-    return out.decode("utf-8")
-
-#  Run shell commands and print real time outputs to the console
-def exec_command_realtime(commands, _exec = None):
-	process = subprocess.Popen(commands, bufsize = 1, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, executable=_exec)
-	while process.poll() is None:
-		line = process.stdout.readline()
-		if line:
-			sys.stdout.write(line.decode('utf-8'))
-			sys.stdout.flush()
-	if process.returncode:
-		null = None
-
-def to_abs_path(x) :
-	if x[0:1] != '/' :
-		return os.getcwd() + '/' + x
-	return x
-
-def strcmp_x(s1, s2) :
-	i = 0
-	j = 0
-	while i < len(s1) and j < len(s2) :
-		c = ord(s1[i:i+1]) - ord(s2[j:j+1]) 
-		if c != 0 :
-			return c
-		i += 1
-		j += 1
-	return 0
-		
-def select_options(short_options, long_options, args) :
-	new_args = [ ]
-	others = ''
-	need_param = False
-	for a in args :
-		if need_param :
-			new_args.append(a)
-			need_param = False
-			continue
-		matched = False
-		n = 0
-		if a[0] == '-' :
-			if a[1] == '-' :
-				n = 2
-			else :
-				n = 1
-			for o in long_options :
-				if strcmp_x(a[n:], o) == 0 :
-					new_args.append(a)
-					if o[-1] == '=' and a.find('=') < 0 :
-						need_parm = True
-					matched = True
-					break
-		if not matched :
-			others += ' ' + a
-	return new_args, others
-
-
-#================================================
-#
-#  The main entry
-#
-#================================================
-
-short_options = 'd:'
-long_options = (["y-cc=", "y-xcc=", "y-print-cflags=",
-		"y-print-dependency=", "y-verbose-command", "y-ignore=", 'y-save-script='])
-
-a, make_args = select_options(short_options, long_options, sys.argv[1:])
-
-print(a)
-print('--------------------------------')
-print(make_args)
-print('--------------------------------')
-#exit(0)
-try:
-    opts, args = getopt.gnu_getopt(a, short_options, long_options)
-except getopt.GetoptError as err:
-	print(str(err), file=sys.stderr)
-	exit(2)
-
-print(opts)
-print(args)
-
-for o, a in opts:
-	if o == "-d":
-		TARGET_DIRECTORY = a
-	elif o == '--y-cc':
-		Y_CC = a
-	elif o == '--y-xcc':
-		Y_PXCC = to_abs_path(a)
-	elif o == '--y-print-cflags' :
-		Y_CFLAGS_FILE = to_abs_path(a)
-	elif o == '--y-print-dependency' :
-		Y_DEP_FILE = to_abs_path(a)
-	elif o == '--y-verbose-command' :
-		Y_VERBOSE_COMMAND = 'export MAKE_TEMPLATE_VERBOSE=1\n'
-	elif o == '--y-ignore' :
-		Y_IGNORE += '--y-ignore=\''
-		Y_IGNORE += a
-		Y_IGNORE += '\' '
-	elif o == '--y-save-script' :
-		Y_EXEC_SCRIPT = to_abs_path(a)
-
-if Y_PXCC == None:
-	Y_PXCC = to_abs_path(os.path.dirname(sys.argv[0]) + "/pxcc.exe")
-
-#if os.path.isfile(Y_CC) and  IS_IXUSR(os.stat(Y_CC).st_mode) :
-#	None
-if run_command_sync('which ' + Y_CC + ' 2>/dev/null').rstrip('\r\n').strip(' ') == '' :
-	print("No such file: ", Y_CC, file=sys.stderr)
-	exit(2)
-Y_ORIG_CC = run_command_sync('which ' + Y_CC).rstrip('\r\n')
-		
-final_commands = '''
-function __pxcc_strcmp()
-{
-	local n1 n2 n
-	n1=${#1}
-	n2=${#2}
-	if [ $n1 -lt $n2 ]; then
-		n=$n1
-	else
-		n=$n2
-	fi
-	if [ ${1:0:n} = ${2:0:n} ]; then
-		echo "y"
-	fi
-}
-
-function __pxcc_select_options()
-{
-	local need_param a o new_args
-	for a in $* ; do
-		if [ x$need_param = xy ]; then
-			new_args="$new_args $a"
-			need_param=''
-			continue
-		fi
-		matched=''
-		n=0
-		if [ ${a:0:1} = '-' ]; then
-			for o in $XCC_LONG_OPTIONS ; 
-			do
-				if [ x$(__pxcc_strcmp "$a" "-$o") = xy -o x$(__pxcc_strcmp "$a" "--$o") = xy ]; then
-					new_args="$new_args $a"
-					if [[ $o =~ '=' && $a =~ '=' ]] ; then
-						need_parm=y
-					fi
-					matched=y
-					break
-				fi
-			done
-		fi
-	done
-	echo "$new_args"
-}
-'''
-
-if Y_CC == "armcc" :
-	final_commands += '''
-function __pxcc_get_search_dirs()
-{
-	if [ -n "${ARMCC41INC}" ]; then
-		echo "-y-I=${ARMCC41INC}"
-	fi
-}
-'''
-elif Y_CC == "gcc" :
-	final_commands += '''
-function __pxcc_get_search_dirs()
-{
-	while read line
-	do
-		if [ "$line" = "#include <...> search starts here:" ]; then
-			flag=y
-		elif [ "$line" = "End of search list." ]; then
-			return
-		elif [ x$flag = xy ]; then
-			echo " -y-I=$line"
-		fi
-	done <<< "$($1 -xc -E -v /dev/null 2>&1)"
-}
-'''
-
-final_commands += 'function ' + Y_CC + '()\n{\n    '
-if Y_CC == 'armcc':
-	final_commands +=  '    sys_predefines=$(' + Y_ORIG_CC 
-	final_commands +=  ' $(__pxcc_select_options "$@") --list_macros /dev/null)\n'
-elif Y_CC == "gcc" :
-	final_commands +=  '    sys_predefines=$(' + Y_ORIG_CC 
-	final_commands +=  ' $(__pxcc_select_options "$@") -E -xc -dM /dev/null)\n'
-	
-final_commands += Y_PXCC
-final_commands += " -y-get-macros=\"${sys_predefines}\" \\\n"
-final_commands += " $(__pxcc_get_search_dirs " + Y_ORIG_CC + ')'
-
-if Y_DEP_FILE != None :
-	final_commands += ' -y-print-dependency=' + Y_DEP_FILE
-final_commands += ' -y-preprocess -y-debug=0 -y-in-place=.bak \\\n'
-final_commands += Y_IGNORE
-final_commands += '\\\n'
-final_commands += ' $* || return $?\n'
-final_commands += '    ' + Y_ORIG_CC
-final_commands += ' $*\n}\n'
-if Y_CFLAGS_FILE != None :
-	final_commands += ': > ' + Y_CFLAGS_FILE + '\n'
-if Y_VERBOSE_COMMAND != None :
-	final_commands += Y_VERBOSE_COMMAND
-final_commands += 'export -f ' + Y_CC + ' __pxcc_strcmp __pxcc_select_options __pxcc_get_search_dirs\n' 
-final_commands += run_command_sync('which make').rstrip('\r\n') + make_args + '\n'
-
-
-if Y_EXEC_SCRIPT == None :
-	print(final_commands)
-	exec_command_realtime(final_commands, '/bin/bash')
-else :
-	fd = open(Y_EXEC_SCRIPT, "w")
-	if fd != None :
-		fd.write(final_commands)
-		fd.close()
-		exec_command_realtime(Y_EXEC_SCRIPT, '/bin/bash')
-
-
 
 

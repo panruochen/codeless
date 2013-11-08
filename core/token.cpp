@@ -148,8 +148,9 @@ bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *err
 		c = *p;
 		switch(state) {
 		case SM_STATE_INITIAL:
-			if( isalpha(c) || c == '_' ) {
+			if( isalpha(c) || c == '_' || c == '#') {
 				cword += c;
+				have_sharp = (c == '#');
 				if( ! (flags & TT_FLAG_GET_SHARP) )
 					state = SM_STATE_IDENTIFIER;
 				else

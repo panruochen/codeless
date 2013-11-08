@@ -22,19 +22,6 @@
 
 #define PROGRAM_NAME  "pxcc"
 
-static char *preprocess_option(char *line)
-{
-	char *p;
-	int n;
-
-	n = strlen(line);
-	if(n == 0)
-		return line;
-	for( p = n + line - 1; p >= line && (*p == '\r' || *p == '\n'); p--) *p = '\0';
-	for( p = line; (*p == ' ' || *p == '\t'); p++ ) ;
-	return p;
-}
-
 static int precedence_matrix_setup(TCC_CONTEXT *tc, size_t oprnum, const char **oprset, const char **matrix)
 {
 	size_t i;
@@ -390,46 +377,21 @@ static bool get_utb(const char *path, struct utimbuf *times)
 	return true;
 }
 
-/***
-static CC_ARRAY<CC_STRING> __getopt(int argc, char *argv[])
-{
-	CC_ARRAY<CC_SRTING> options, o;
-	int flag;
 
-	flag = 0;
-	for(i = 1; i < argc; i++) {
-		if(flag) {
-			flag = 0;
-		} else {
-			index = find(cc_options, argv[i]);
-			if( index > 0 ) {
-				if( cc_options[strlen(cc_options)] == '=' )
-					;
-				else
-					flag = 1;
-
-			}
-		}
-	}
-}
-****/
-
-static void save_cl_options(int argc, char *argv[])
+static void save_command_line(const char *filename, int argc, char *argv[])
 {
 	int i;
-	CC_STRING file;
-	char cwd[260];
 	FILE *fp;
+	char cwd[260];
 
-	file = xdirname(argv[0]);
-	file += "/cl-options.txt";
-
+	fp = fopen(filename, "ab+");
 	getcwd(cwd, sizeof(cwd));
-	fp = fopen(file.c_str(), "w");
-	fprintf(fp, "%s\n", cwd);
-	for(i = 0; i < argc; i++) {
+	fprintf(fp, "cd %s\n", cwd);
+	for(i = 0; i < argc; i++)
 		fprintf(fp, "%s ", argv[i]);
-	}
+	fputc('\n', fp);
+	fputc('\n', fp);
+	fputc('\n', fp);
 	fclose(fp);
 }
 
@@ -444,7 +406,6 @@ int main(int argc, char *argv[])
 	const char *tmpfile = "/dev/stdout";
 	int i;
 	MEMORY_FILE cl_info;
-	CC_STRING warning;
 	const char *open_depfile_mode = NULL;
 	CC_STRING dep_file;
 	const char *errmsg;
@@ -470,12 +431,14 @@ BLOCK_START
 		C_OPTION_INCDIR,
 		C_OPTION_GET_MACROS,
 		C_OPTION_PRINT_DEPENDENCY,
-		C_OPTION_APPEND_DEPENDENCY,
+		C_OPTION_PRINT_COMMAND_LINE,
 		C_OPTION_SOURCE,
+		C_OPTION_OUTPUT,
 		C_OPTION_VIA,
 		C_OPTION_SILENT,
 	};
 	CC_ARRAY<CC_STRING>  search_dirs_I, search_dirs_J, search_dirs_quote;
+	CC_STRING warning;
 
 	preprocess_command_line(argc, argv, new_options);
 
@@ -504,7 +467,6 @@ BLOCK_START
 			{"isysroot", 1, 0, 0},
 /*--------------------------------------------------------------------*/
 			{"y-debug",    1, 0, C_OPTION_DEBUG},
-			{"y-cc",    1, 0, C_OPTION_CC},
 			{"y-trace-macro", 1, 0, C_OPTION_TRACE_MACRO },
 			{"y-trace-line", 1, 0, C_OPTION_TRACE_LINE },
 			{"y-ignore", 1, 0, C_OPTION_IGNORE },
@@ -514,7 +476,9 @@ BLOCK_START
 			{"y-I", 1, 0, C_OPTION_INCDIR},
 			{"y-get-macros", 1, 0, C_OPTION_GET_MACROS},
 			{"y-print-dependency", 2, 0, C_OPTION_PRINT_DEPENDENCY},
+			{"y-print-command-line", 1, 0, C_OPTION_PRINT_COMMAND_LINE},
 			{"y-source", 1, 0, C_OPTION_SOURCE},
+			{"y-output", 1, 0, C_OPTION_OUTPUT},
 			{0, 0, 0, 0}
 		};
 
@@ -542,9 +506,6 @@ BLOCK_START
 				debug_console.set_gate_level(level);
 			}
 			break;
-		case C_OPTION_CC:
-			host_cc = optarg;
-			break;
 		case C_OPTION_TRACE_MACRO:
 			dx_traced_macros.push_back(optarg);
 			break;
@@ -562,6 +523,8 @@ BLOCK_START
 			if(suffix == NULL)
 				suffix = "";
 			break;
+		case C_OPTION_OUTPUT:
+			break;
 		case C_OPTION_INCDIR:
 			add_to_search_dir(search_dirs_I, optarg);
 			add_to_search_dir(tcc_sys_search_dirs, optarg);
@@ -577,6 +540,9 @@ BLOCK_START
 				open_depfile_mode = "ab+";
 			} else
 				open_depfile_mode = "wb";
+			break;
+		case C_OPTION_PRINT_COMMAND_LINE:
+			save_command_line(optarg, argc, argv);
 			break;
 		
 		case 'I':
@@ -688,9 +654,9 @@ BLOCK_END
 			continue;
 		}
 
-		if( strstr(current_file, "glob.c") != NULL )
-			save_cl_options(argc, argv);
-		
+		if( strstr(current_file, "xmltok.c") != NULL )
+			save_command_line("cl-options.txt", argc, argv);
+
 		if(suffix != NULL) {
 			strcpy(tmpbuf, PROGRAM_NAME "XXXXXX");
 			if( mktemp(tmpbuf) == NULL ) {
@@ -717,11 +683,10 @@ BLOCK_END
 		if( ! get_utb(current_file, &utb) )
 			continue;
 		errmsg = parser.do_parse(tc, keywords, COUNT_OF(keywords), &file, tmpfile, depf, &file_changed);
-		if(errmsg == 0) {
+		if(errmsg == NULL) {
 			if(suffix != NULL && file_changed) {
-				if(suffix[0] != '\0') {
+				if(suffix[0] != '\0')
 					rename(current_file, outfile.c_str());
-				}
 				rename(tmpfile, current_file);
 				utime(current_file, &utb);
 				runtime_console << "Success on handling " << current_file << '\n';
@@ -743,4 +708,3 @@ bool rtm_preprocess = false;
 bool rtm_silent = false;
 CC_ARRAY<CC_STRING>  dx_traced_macros;
 CC_ARRAY<CC_STRING>  dx_traced_lines;
-CC_STRING host_cc;
