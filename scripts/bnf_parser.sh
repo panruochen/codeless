@@ -215,7 +215,7 @@ func output_matrix(matrix, order, array_size, __ARGVEND__, i,j,n,x,y,p,fmt)
 		printf("#ifndef  __OPERATOR_PRECEDENCE_MATRIX_H\n")
 		printf("#define  __OPERATOR_PRECEDENCE_MATRIX_H\n\n")
 
-
+		printf("#ifdef   __OPM_CONST_DATA\n")
 		printf("static const char *%s[] = {\n", oprmx_name)
 	}
 
@@ -244,7 +244,8 @@ func output_matrix(matrix, order, array_size, __ARGVEND__, i,j,n,x,y,p,fmt)
 			$0 = other_symbols[i]
 			printf("\"%s\", ", $2)
 		}
-		printf("};\n\n");
+		printf("};\n");
+		printf("#endif\n\n");
 
 		n = 0
 		for(i = 1; i <= array_size; i++) {
@@ -261,7 +262,7 @@ func output_matrix(matrix, order, array_size, __ARGVEND__, i,j,n,x,y,p,fmt)
 			printf("#define  %-24s %u\n", $1, n)
 			n++
 		}
-		printf("#define  %-24s %u\n", "SSID_INVALID", 0xFFFF)
+		printf("#define  %-24s %uU\n", "SSID_INVALID", 0xFFFFFFFF)
 
 		printf("\n#endif\n")
 	}

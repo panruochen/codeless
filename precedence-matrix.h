@@ -1,6 +1,7 @@
 #ifndef  __OPERATOR_PRECEDENCE_MATRIX_H
 #define  __OPERATOR_PRECEDENCE_MATRIX_H
 
+#ifdef   __OPM_CONST_DATA
 static const char *g1_oprmx[] = {
 	",  ,  >",
 	",  ?  <",
@@ -738,7 +739,8 @@ static const char *g1_oprset[] = {
 	",", "?", ":", "||", "&&", "|", "^", "&", "==", "!=", "<", ">", "<=", ">=", "<<", ">>", "+", "-", "*", "/", "%", "~", "!", "i", "(", ")", "#", };
 
 static const char *reserved_symbols[] = {
-	"#if", "#elif", "#ifdef", "#ifndef", "#else", "#endif", "#define", "#undef", "#include", "#include_next", "*X*", "defined", };
+	"##", "#if", "#elif", "#ifdef", "#ifndef", "#else", "#endif", "#define", "#undef", "#include", "#include_next", "...", "*X*", "defined", "__VA_ARGS__", };
+#endif
 
 #define  SSID_COMMA               0
 #define  SSID_QUESTION            1
@@ -767,18 +769,21 @@ static const char *reserved_symbols[] = {
 #define  SSID_LEFT_PARENTHESIS    24
 #define  SSID_RIGHT_PARENTHESIS   25
 #define  SSID_SHARP               26
-#define  SSID_SHARP_IF            27
-#define  SSID_SHARP_ELIF          28
-#define  SSID_SHARP_IFDEF         29
-#define  SSID_SHARP_IFNDEF        30
-#define  SSID_SHARP_ELSE          31
-#define  SSID_SHARP_ENDIF         32
-#define  SSID_SHARP_DEFINE        33
-#define  SSID_SHARP_UNDEF         34
-#define  SSID_SHARP_INCLUDE       35
-#define  SSID_SHARP_INCLUDE_NEXT  36
-#define  SSID_SYMBOL_X            37
-#define  SSID_DEFINED             38
-#define  SSID_INVALID             65535
+#define  SSID_DUAL_SHARP          27
+#define  SSID_SHARP_IF            28
+#define  SSID_SHARP_ELIF          29
+#define  SSID_SHARP_IFDEF         30
+#define  SSID_SHARP_IFNDEF        31
+#define  SSID_SHARP_ELSE          32
+#define  SSID_SHARP_ENDIF         33
+#define  SSID_SHARP_DEFINE        34
+#define  SSID_SHARP_UNDEF         35
+#define  SSID_SHARP_INCLUDE       36
+#define  SSID_SHARP_INCLUDE_NEXT  37
+#define  SSID_TRIDOT              38
+#define  SSID_SYMBOL_X            39
+#define  SSID_DEFINED             40
+#define  SSID_VA_ARGS             41
+#define  SSID_INVALID             4294967295U
 
 #endif

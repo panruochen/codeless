@@ -1,17 +1,18 @@
-PXCC
-====
+## YCPP - A C/C++ source code preprocessor
 
-PXCC - A C/C++ source code CleanTool
+YCPP is designed to remove conditional blocks.
 
-Generally PCXX works in the following two ways:
-1. The user feeds explict definitions and source files to PXCC and PCXX
-   cleans those conditional blocks which can be evaluated true or false.
-   If a block cannot be evaluated explictly, it will be kept.
-2. PXCC works as a preprocessor attached on the `make' process and strip
-   any conditional blocks in the source files which are compiled. In this
-   way, PXCC must work with another run-make script with proper parameters
-   set.
+YCPP is usually used with the y-Make script during compilation process.
+It feteches macros from the command line and header files, and then
+cleans up the source code. That should give you a clear screen while
+reading source code.
 
-To understand how PXCC works, you can simply run `make run' and then get
-into the directory make-3.81 to compare any c file to the bak file with
-the same base name and see how different they are.
+![Examples](https://cloud.githubusercontent.com/assets/1546040/4838205/0377bfea-5fe5-11e4-83d9-f0c20679ba7c.png)
+
+Until now, YCPP works on the following projects:
+ * linux-3.6
+ * linux-2.6.27.29
+ * llvm-3.5.0
+
+More prjects are under tests.
+

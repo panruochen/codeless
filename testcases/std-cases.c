@@ -66,7 +66,6 @@
 "It is okay for case 7 (branch 1)"
 #elif 1
 "It is okay for case 7 (branch 2)"
-#endif
 
 /**********************************************/
 // case 8

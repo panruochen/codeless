@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+
+# vim: tabstop=4 expandtab shiftwidth=4 softtabstop=4
+
+YZ_EXTDIR = 'pyext'
+
+import re, os, sys, getopt, subprocess
+sys.path.append(os.path.dirname(sys.argv[0]) + '/' + YZ_EXTDIR)
+import yzu
+
+# The Host Compiler
+YZ_CC               = None
+# The PXCC Tool
+YZ_PXCC             = None
+
+YZ_DEP_FILE         = None
+YZ_CL_FILE          = None
+YZ_SHELL            = None
+
+class ASH :
+	def pipe_exec(self, cmd, errors='abort') :
+		sp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+		out, err = sp.communicate()
+		if errors != 'ignore' and sp.returncode :
+			raise Exception("***(1) CMD FALIED");
+		return out.decode("utf-8")
+
+	def exec(self, cmd, errors='abort') :
+		sp = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
+		sp.wait()
+		if errors != 'ignore' and sp.returncode :
+			raise Exception("***(2) CMD FAILED");
+
+def to_abs_path(x) :
+	if x[0:1] != '/' :
+		return os.getcwd() + '/' + x
+	return x
+
+
+#================================================
+#
+#  The main entry
+#
+#================================================
+
+short_options = ''
+long_options = (["yz-cc=", "yz-xcc=", "yz-print-dependency=", 'yz-print-command-line=', 
+	'yz-shell='])
+
+a, make_args = yzu.collect_options(short_options, long_options, sys.argv[1:])
+
+#print(a)
+#print('--------------------------------')
+#print(make_args)
+#print('--------------------------------')
+#exit(0)
+try:
+    opts, args = getopt.gnu_getopt(a, short_options, long_options)
+except getopt.GetoptError as err:
+	print(str(err), file=sys.stderr)
+	exit(2)
+
+ash = ASH()
+#print(opts)
+#print(args)
+
+for o, a in opts:
+	if o == '--yz-cc':
+		YZ_CC = a
+	elif o == '--yz-xcc':
+		YZ_PXCC = to_abs_path(a)
+	elif o == '--yz-print-dependency' :
+		YZ_DEP_FILE = to_abs_path(a)
+	elif o == '--yz-print-command-line' :
+		YZ_CL_FILE = to_abs_path(a)
+	elif o == '--yz-shell' :
+		YZ_SHELL = a
+
+if YZ_PXCC == None:
+	YZ_PXCC = to_abs_path(os.path.dirname(sys.argv[0]) + "/ycpp.exe")
+
+YZ_CC_PATH = ash.pipe_exec('which ' + YZ_CC).rstrip('\r\n')
+if YZ_CC_PATH == '':
+	print("No such file: ", YZ_CC, file=sys.stderr)
+	exit(2)
+
+my_args = ' --yz-cc=' + YZ_CC + ' --yz-debug=0 --yz-in-place=.bak' 
+if YZ_DEP_FILE != None :
+	my_args += ' --yz-print-dependency=' + YZ_DEP_FILE
+if YZ_CL_FILE != None :
+	my_args += ' --yz-print-command-line=' + YZ_CL_FILE
+
+final_commands  = 'function ' + YZ_CC + '()\n{\n    '
+final_commands += YZ_PXCC + my_args
+final_commands += ' "$@" || return $?\n'
+final_commands += '    ' + YZ_CC_PATH
+final_commands += ' $*\n}\n'
+
+YZ_CXX = ''
+if re.match(r'gcc$', YZ_CC) :
+    YZ_CXX = YZ_CC[0:len(YZ_CC)-3] + 'g++'
+    YZ_CXX_PATH = ash.pipe_exec('which ' + YZ_CXX).rstrip('\r\n')
+    if YZ_CXX_PATH == '' :
+        print("No such file: ", YZ_CXX, file=sys.stderr)
+        exit(2)
+    final_commands += 'function ' + YZ_CXX + '()\n{\n    '
+    final_commands += YZ_PXCC + my_args
+    final_commands += ' "$@" || return $?\n'
+    final_commands += '    ' + YZ_CXX_PATH
+    final_commands += ' $*\n}\n'
+
+final_commands += 'export -f ' + YZ_CC + ' ' + YZ_CXX + '\n' 
+final_commands += ash.pipe_exec('which make').rstrip('\r\n')
+final_commands += make_args
+if YZ_SHELL != None :
+	final_commands += ' SHELL=' + YZ_SHELL + ' '
+final_commands += '\n'
+
+print(final_commands)
+ash.exec(final_commands)
+
+# ARMCC 3.1 Predefined Macros
+'''
+#define __STDC__ 1
+#define __STDC_VERSION__ 199409L
+#define __EDG__ 1
+#define __EDG_VERSION__ 310
+#define __sizeof_int 4
+#define __sizeof_long 4
+#define __sizeof_ptr 4
+#define __ARMCC_VERSION 410894
+#define __TARGET_CPU_ARM7TDMI 1
+#define __TARGET_FPU_SOFTVFP 1
+#define __CC_ARM 1
+#define __arm 1
+#define __arm__ 1
+#define __TARGET_ARCH_4T 1
+#define __TARGET_ARCH_ARM 4
+#define __TARGET_ARCH_THUMB 1
+#define __TARGET_FEATURE_HALFWORD 1
+#define __TARGET_FEATURE_THUMB 1
+#define __TARGET_FEATURE_MULTIPLY 1
+#define __TARGET_FEATURE_EXTENSION_REGISTER_COUNT 0
+#define __OPTIMISE_SPACE 1
+#define __OPT_SMALL_ASSERT 1
+#define __OPTIMISE_LEVEL 2
+#define __SOFTFP__ 1
+'''
+
+
