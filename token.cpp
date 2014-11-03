@@ -6,8 +6,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-#include "tcc.h"
-#include "c++-if.h"
+#include "ycpp.h"
 
 
 static CC_STRING get_format(const CC_STRING& s)
@@ -25,7 +24,7 @@ static CC_STRING get_format(const CC_STRING& s)
 		fmt += s[0];
 		break;
 	default:
-		runtime_console << "Bad format:" << s << '\n';
+		log(DML_RUNTIME, "Bad format: %s\n", s.c_str());
 		assert(0);
 	}
 	return fmt;
@@ -33,28 +32,22 @@ static CC_STRING get_format(const CC_STRING& s)
 
 #define ishexdigit(c)  (isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
 
-static TOKEN new_token(TCC_CONTEXT *tc, const CC_STRING& name, short attr = TA_OPERATOR)
+static CToken new_token(TCC_CONTEXT *tc, const CC_STRING& name, short attr = CToken::TA_OPR)
 {
-	TOKEN token;
+	CToken token;
 
-	token.id   = symtab_insert(tc->symtab, name.c_str());
+	token.id   = tc->syMap.Put(name);
 	token.attr = attr;
-#if ! __OPTIMIZE__
-	token.symbol = id_to_symbol(tc->symtab, token.id);
-	token.base = 0;
-#endif
+    token.name = name;
 	return token;
 }
 
-void new_number(TCC_CONTEXT *tc, TOKEN &token, const CC_STRING& name, int base, const char *format)
+void new_number(TCC_CONTEXT *tc, CToken &token, const CC_STRING& name, int base, const CC_STRING& format)
 {
-	token.id     = symtab_insert(tc->symtab, name.c_str());
-	token.attr   = TA_UINT;
-	sscanf(name.c_str(), format, &token.u32_val);
-#if ! __OPTIMIZE__
-	token.symbol = strdup(name.c_str());
-	token.base   = base;
-#endif
+	token.id     = tc->syMap.Put(name);
+	token.attr   = CToken::TA_UINT;
+	sscanf(name.c_str(), format.c_str(), &token.u32_val);
+    token.name = name;
 }
 
 #define GET_OPERATOR()                       do{ \
@@ -70,40 +63,17 @@ void new_number(TCC_CONTEXT *tc, TOKEN &token, const CC_STRING& name, int base, 
     goto done;                                   \
 } while(0)
 
-bool take_include_token(TCC_CONTEXT *tc, const char **line, ERR_STRING *errs)
-{
-	const char *p;
-	char c;
-
-	*errs = NULL;
-	p = *line;
-	SKIP_WHITE_SPACES(p);
-
-	if( (c = *p++) == '<' ) {
-		SKIP_WHITE_SPACES(p);
-		while( (c = *p++) != '>' ) {
-			if( c == '\0' ) {
-				*errs = "missing terminating '<' character";
-				return false;
-			}
-		}
-		*line = p;
-		return true;
-	}
-	return false;
-}
 
 
 /**  
  * Get one token from the input line and then move the read pointer forward.
  **/
-bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *errs, int flags)
+bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex, bool for_include)
 {
-	static CC_STRING last_error;
+	CC_STRING e_msg;
 	enum {
 		SM_STATE_INITIAL,
 		SM_STATE_IDENTIFIER,
-		SM_STATE_IDENTIFIER2,
 		SM_STATE_NUM0,
 		SM_STATE_0X,
 		SM_STATE_DEC_NUM,
@@ -115,106 +85,137 @@ bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *err
 		SM_STATE_SINGLE_AND,
 		SM_STATE_SINGLE_NOT,
 		SM_STATE_SINGLE_EQUAL,
-		SM_STATE_ANGLE_BRACKET,
+		SM_STATE_LESS,
+		SM_STATE_MORE,
 		SM_STATE_ADDITION,
 		SM_STATE_SUBTRACTION,
 
 		SM_STATE_STRING,
 		SM_STATE_STR_ESC,
 		SM_STATE_STR_HEX,
+
+		SM_STATE_SHARP,
+		SM_STATE_DOT,
+		SM_STATE_DOT2,
 	} state;
 	bool retval = false;
 	CC_STRING cword;
-	TOKEN& token = *tokp;
+	CToken& token = *tokp;
 	char c;
-	char quation;
+	char quation = 0;
 	const char *p;
-	int base;
+	int base = 0;
 	CC_STRING format;
 	char char_val;
-	bool have_sharp = false;
 
 	/* Initialize */
 	state = SM_STATE_INITIAL;
 	char_val = -1;
 	p = *line;
-	SKIP_WHITE_SPACES(p);
+	skip_blanks(p);
 	if(*p == '\n' || *p == '\0')
 		return false;
 
-	*errs = NULL;
 	for(; ; p++) {
 
 		c = *p;
 		switch(state) {
 		case SM_STATE_INITIAL:
-			if( isalpha(c) || c == '_' || c == '#') {
-				cword += c;
-				have_sharp = (c == '#');
-				if( ! (flags & TT_FLAG_GET_SHARP) )
-					state = SM_STATE_IDENTIFIER;
-				else
-					state = SM_STATE_IDENTIFIER2;
-			} else if( c == '0' ) {
+			switch (c)
+			{
+			case '0':
 				cword += c;
 				state = SM_STATE_NUM0;
-			} else if( c >= '1' && c <= '9' ) {
-				cword += c;
-				state = SM_STATE_DEC_NUM;
-			} else if(isspace(c) || c == '\n') {
-			} else if(c == '|') {
+				break;
+			case ' ':
+			case '\t':
+			case '\n':
+				break;
+			case '|': 
 				state = SM_STATE_SINGLE_VBAR ;
-			} else if(c == '&') {
+				break;
+			case '&': 
 				state = SM_STATE_SINGLE_AND;
-			} else if(c == '!') {
+				break;
+			case '!':
 				state = SM_STATE_SINGLE_NOT;
-			} else if(c == '=') {
+				break;
+			case '=':
 				state = SM_STATE_SINGLE_EQUAL;
-			} else if (c == '<' || c == '>') {
-				state = SM_STATE_ANGLE_BRACKET;
+				break;
+			case '<':
+				state = SM_STATE_LESS;
 				cword = c;
-			} else if(c == '+' ) {
+				break;
+			case '>':
+				state = SM_STATE_MORE;
+				cword = c;
+				break;
+			case '+': 
 				state = SM_STATE_ADDITION;
 				cword = c;
-			} else if(c == '-' ) {
+				break;
+			case '-': 
 				state = SM_STATE_SUBTRACTION;
 				cword = c;
-			} else if(c == '"' || c == '\'') {
+				break;
+			case '#':
+				state = SM_STATE_SHARP;
+				cword = c;
+				break;
+			case '"':
+			case '\'':
+			got_string:
 				state = SM_STATE_STRING;
 				cword   = c;
 				quation = c;
-			} else if(c == '*' || c == '/' || c == '%' || c == '(' || c == ')' || c == '?' || c == ':'
-				|| c == ',' ) {
+				break;
+			case '.':
+				state = SM_STATE_DOT;
 				cword = c;
-                token = new_token(tc, cword);
+				break;
+			case '*':
+			case '/':
+			case '%':
+			case '(':
+			case ')':
+			case '?':
+			case ':':
+			case ',':
+				cword = c;
+				token = new_token(tc, cword);
 				p++;
 				goto done;
-			} else {
-				cword = c;
-                token = new_token(tc, cword);
-				p++;
-				goto done;
+			default:
+				if( c >= '1' && c <= '9' ) {
+					cword += c;
+					state = SM_STATE_DEC_NUM;
+				} else if( isalpha(c) || c == '_' ) {
+					cword += c;
+					state = SM_STATE_IDENTIFIER;
+				} else {
+					cword = c;
+		               token = new_token(tc, cword);
+					p++;
+					goto done;
+				}
+				break;
 			}
+			/**
+			if( for_include && (state != SM_STATE_INITIAL && state != SM_STATE_IDENTIFIER && state != SM_STATE_LESS && state != SM_STATE_STRING) ) {
+				fprintf(stderr,  "state=%d, sm_ident=%d\n", state, SM_STATE_IDENTIFIER);
+				*gex = "#include expects \"FILENAME\" or <FILENAME>";
+				goto error;
+			}**/
 			break;
 
 		case SM_STATE_IDENTIFIER:
-			if( identifier_char(c) )
+			if( is_id_char(c) )
 				cword += c;
-			else {
-				token = new_token(tc, cword, TA_IDENTIFIER);
-				goto done;
-			}
-			break;
-
-		case SM_STATE_IDENTIFIER2:
-			if( isspace(c) )
-				;
-			else if( identifier_char(c) || c == '#' ) {
-				if(c == '#')
-					have_sharp = true;
-				cword += c;
+			else if(c == '"' || c == '\'') {
+				goto got_string;
 			} else {
-				token = new_token(tc, cword, have_sharp ? TA_MACRO_STR: TA_IDENTIFIER);
+				token = new_token(tc, cword, CToken::TA_IDENT);
 				goto done;
 			}
 			break;
@@ -227,9 +228,9 @@ bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *err
 				cword += c;
 				state = SM_STATE_OCT_NUM;
 			} else if(c == '8' || c == '9') {
-				last_error  = "Invalid number: ";
-				last_error += c;
-				*errs = last_error.c_str();
+				e_msg  = "Invalid number: ";
+				e_msg += c;
+				*gex = e_msg;
 				goto error;
 			} else
 				GET_NUMBER(10,"%u");
@@ -247,7 +248,7 @@ bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *err
 				cword += c;
 				state = SM_STATE_HEX_NUM;
 			} else {
-				*errs = "Invalid token 0x";
+				*gex = "Invalid token 0x";
 				goto error;
 			}
 			break;
@@ -288,16 +289,16 @@ bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *err
 				format = 'l' + format ;
 				state = SM_STATE_NUM_POSTFIX2;
 			} else
-				GET_NUMBER(base, get_format(format).c_str());
+				GET_NUMBER(base, get_format(format));
 			break;
 		case SM_STATE_NUM_POSTFIX2:
 			if(c == 'L' || c == 'l') {
 				format = 'l' + format ;
-				new_number(tc, token, cword, base, get_format(format).c_str());
+				new_number(tc, token, cword, base, get_format(format));
 				p++;
 				goto done;
 			} else
-				GET_NUMBER(base, get_format(format).c_str());
+				GET_NUMBER(base, get_format(format));
 			break;
 
 		case SM_STATE_SINGLE_VBAR:
@@ -332,17 +333,26 @@ bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *err
 			GET_OPERATOR();
 			break;
 
-		case SM_STATE_ANGLE_BRACKET: /* STATE(<>) */
-			if(c == '=' )
+		case SM_STATE_LESS:
+		case SM_STATE_MORE: /* STATE(<>) */
+			if( ! for_include ) {
+				if(c == '=' )
+					cword += c;
+				else if(cword[0] == c)
+					cword += c;
+				GET_OPERATOR();
+			} else {
 				cword += c;
-			else if(cword[0] == c)
-				cword += c;
-			GET_OPERATOR();
+				if(c == '>') {
+					p++;
+					goto done;
+				}
+			}
 			break;
 
 		case SM_STATE_ADDITION:
 			if(c == '+') {
-				*errs = "Invalid ++ operator";
+				*gex = "Invalid ++ operator";
 				goto error;
 			} else {
 				GET_OPERATOR();
@@ -351,11 +361,17 @@ bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *err
 
 		case SM_STATE_SUBTRACTION:
 			if(c == '-') {
-				*errs = "Invalid -- operator";
+				*gex = "Invalid -- operator";
 				goto error;
 			} else {
 				GET_OPERATOR();
 			}
+			break;
+
+		case SM_STATE_SHARP:
+			if(c == '#')
+				cword += c;
+			GET_OPERATOR();
 			break;
 
 		case SM_STATE_STRING :
@@ -363,14 +379,14 @@ bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *err
 			switch( c ) {
 			case '"':
 				if(quation == '"') {
-					token = new_token(tc, cword, TA_STRING);
+					token = new_token(tc, cword, CToken::TA_STR);
 					p++;
 					goto done;
 				}
 				break;
 			case '\'':
 				if(quation == '\'') {
-					token = new_token(tc, cword, TA_CHAR);
+					token = new_token(tc, cword, CToken::TA_CHAR);
 					token.i32_val = char_val;
 					p++;
 					goto done;
@@ -404,10 +420,23 @@ bool read_token(TCC_CONTEXT *tc, const char **line, TOKEN *tokp, ERR_STRING *err
 				state = SM_STATE_STRING;
 			break;
 
+		case SM_STATE_DOT:
+			if(c == '.') {
+				cword += c;
+				state = SM_STATE_DOT2;
+			} else
+				GET_OPERATOR();
+			break;
+
+		case SM_STATE_DOT2:
+			cword += c;
+			token = new_token(tc, cword);
+			p++;
+			goto done;
 		}
 		if(c == '\0') {
 			if(state == SM_STATE_STRING || state == SM_STATE_STR_ESC || state == SM_STATE_STR_HEX) {
-				*errs  = "Unterminated string";
+				*gex = "Unterminated string";
 				goto error;
 			} 
 			break;

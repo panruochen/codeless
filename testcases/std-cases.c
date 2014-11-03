@@ -75,7 +75,7 @@
 "It is error for case 8"
 #elif X
 "It is okay for case 8 (branch 1)"
-#elif 1 /* Comment Line 1 -- okay
+#elif 1 + /* Comment Line 1 -- okay
 		   Comment Line 2 -- okay
 		   Comment Line 3 -- okay
 */

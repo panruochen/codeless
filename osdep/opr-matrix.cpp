@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <errno.h>
 
 #include <map>
 #include "tcc.h"
@@ -12,22 +13,23 @@ typedef std::map<ykey_t,int>  II_MAP;
 #define MAKE_KEY(op1, op2)  (((op1) << 16) | (op2))
 #define GET_CC_MAP_CONTAINER(_c, _h)  II_MAP &_c = (* (II_MAP *) _h)
 
-CC_HANDLE oprmx_create()
+int COPMatrix::Create()
 {
-	II_MAP  *handle;
-	handle = new II_MAP;
-	if( handle == NULL )
-		return NULL;
-	return (CC_HANDLE) handle;
+	II_MAP  *opm;
+	opm = new II_MAP;
+	if( opm == NULL )
+		return -ENOMEM;
+	handle = (CC_HANDLE) opm;
+    return 0;
 }
 
-void oprmx_init(CC_HANDLE handle)
+void COPMatrix::Construct()
 {
 	GET_CC_MAP_CONTAINER(container, handle);
 	container.clear();
 }
 
-int oprmx_add(CC_HANDLE handle, sym_t op1, sym_t op2, int precedence)
+int COPMatrix::Put(sym_t op1, sym_t op2, int precedence)
 {
 	GET_CC_MAP_CONTAINER(container, handle);
 	II_MAP::iterator pos;
@@ -41,12 +43,12 @@ int oprmx_add(CC_HANDLE handle, sym_t op1, sym_t op2, int precedence)
 	return -EEXIST;
 }
 
-void oprmx_destroy(CC_HANDLE handle)
+void COPMatrix::Destroy()
 {
 	delete ((II_MAP *) handle);
 }
 
-int oprmx_compare(CC_HANDLE handle, sym_t op1, sym_t op2)
+int COPMatrix::Compare(sym_t op1, sym_t op2)
 {
 	GET_CC_MAP_CONTAINER(container, handle);
 	const ykey_t key = MAKE_KEY(op1, op2);
