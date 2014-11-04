@@ -98,6 +98,10 @@ protected:
 		INCLUDE_LEVEL()
 		{ srcfile = NULL; outfile = NULL; if_level = 0; }
 	};
+<<<<<<< HEAD
+=======
+	INCLUDE_LEVEL           current_level;
+>>>>>>> 0938e7aa5120302a9a641a9799f236d63e4f4fc6
 	CC_STACK<INCLUDE_LEVEL> include_levels;
 
 	inline CFile *current_file();

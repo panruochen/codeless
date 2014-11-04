@@ -742,8 +742,11 @@ bool Cycpp::do_include(sym_t preprocessor, const char *line, const char **output
 	FILE *outf;
 	CFile *file;
 
+<<<<<<< HEAD
 	if( raw_line == "#include <stdc-predef.h>\n" )
 	{ volatile int d = 1; }
+=======
+>>>>>>> 0938e7aa5120302a9a641a9799f236d63e4f4fc6
 	file = GetIncludedFile(preprocessor, line, &outf);
 	if( file == NULL )
 		return false;
@@ -1115,17 +1118,28 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepr
 		AddDependency("", infile->name);
 
 	include_level_push(infile, out_fp, conditionals.size());
+<<<<<<< HEAD
 	INCLUDE_LEVEL ilevel;
+=======
+>>>>>>> 0938e7aa5120302a9a641a9799f236d63e4f4fc6
 	while( 1 ) {
 		if( ReadLine() ) {
 			if( ! SM_Run() )
 				goto error;
 		} else {
+<<<<<<< HEAD
+=======
+			INCLUDE_LEVEL lvl;
+>>>>>>> 0938e7aa5120302a9a641a9799f236d63e4f4fc6
 
 			if( include_levels.size() > 1 && include_levels.top().outfile )
 				fprintf(include_levels.top().outfile, "/****** [Cycpp] Finish expanding ******/\n");
 
+<<<<<<< HEAD
 			ilevel = include_level_pop();
+=======
+			lvl = include_level_pop();
+>>>>>>> 0938e7aa5120302a9a641a9799f236d63e4f4fc6
 			/****
 			if(lvl.if_level != conditionals.size()) {
 				gex.format("Levels mismatched on %s, %zu %zu\n", lvl.srcfile->name.c_str(), lvl.if_level, conditionals.size());
@@ -1133,8 +1147,13 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepr
 			}
 			****/
 
+<<<<<<< HEAD
 			if(infile != ilevel.srcfile )
 				delete ilevel.srcfile;
+=======
+			if(infile != lvl.srcfile )
+				delete lvl.srcfile;
+>>>>>>> 0938e7aa5120302a9a641a9799f236d63e4f4fc6
 			if(include_levels.size() == 0)
 				break;
 		}
@@ -1152,6 +1171,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepr
 
 error:
 	if(!retval) {
+<<<<<<< HEAD
 		if(include_levels.size() > 0)
 			errmsg.format("%s:%u:  %s\n%s\n", current_file()->name.c_str(), current_file()->line, raw_line.c_str(), gex.GetError());
 		else
@@ -1167,6 +1187,20 @@ error:
 
 //	infile->Close();
 //	include_levels.clear();
+=======
+		while(include_levels.size() > 1) {
+			INCLUDE_LEVEL lvl = include_level_pop();
+			if(infile != lvl.srcfile)
+				delete lvl.srcfile;
+			if(lvl.outfile != NULL)
+				fclose(lvl.outfile);
+		}
+		errmsg.format("%s:%u:  %s\n%s\n", current_file()->name.c_str(), current_file()->line, raw_line.c_str(), gex.GetError());
+	}
+
+	infile->Close();
+	include_levels.clear();
+>>>>>>> 0938e7aa5120302a9a641a9799f236d63e4f4fc6
 
 	if(out_fp != NULL && out_fp != stdout)
 		fclose(out_fp);
