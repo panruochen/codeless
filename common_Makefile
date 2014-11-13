@@ -9,12 +9,12 @@
 # This script is expected to be used with gcc toolchains on bash-compatible 
 # shell.
 #
-# Author: Pan Ruochen <coderelease@163.com>
+# Author: Pan Ruochen <kudoos@163.com>
 # Date:   2012/10/10
 #
 #
 # You can get the latest version from here:
-# https://github.com/panruochen/CCMT
+# https://github.com/panruochen/common_Makefile
 #
 ###############################################################################
 
