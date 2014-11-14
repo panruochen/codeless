@@ -47,10 +47,10 @@ public:
 	CC_ARRAY<CC_STRING>  imacro_files;
 	CC_ARRAY<CC_STRING>  isystem_dirs;
 	CC_ARRAY<CC_STRING>  include_files;
-	
+
 	int                  argc;
-	char                **argv;
-	
+	char               **argv;
+
 	int    get_options(int argc, char *argv[]);
 	void   save_cc_args();
 	void   save_my_args();
@@ -89,19 +89,19 @@ protected:
 
 	/*-------------------------------------------------------------*/
 	struct  INCLUDE_LEVEL {
-		CFile  *srcfile;
-		FILE   *outfile;
-		size_t  if_level;
+		CFile   *srcfile;
+		FILE    *outfp;
+		size_t   if_level;
 		
-		INCLUDE_LEVEL(CFile *s, FILE *o, size_t ilevels)
-		{ srcfile = s; outfile = o; if_level=ilevels;}
+		INCLUDE_LEVEL(CFile *s, FILE *of, size_t ilevels)
+		{ srcfile = s; outfp = of; if_level=ilevels;}
 		INCLUDE_LEVEL()
-		{ srcfile = NULL; outfile = NULL; if_level = 0; }
+		{ srcfile = NULL; outfp = NULL; if_level = 0; }
 	};
 	CC_STACK<INCLUDE_LEVEL> include_levels;
 
 	inline CFile *current_file();
-	inline void include_level_push(CFile *srcfile, FILE *outfile, size_t if_level);
+	inline void include_level_push(CFile *srcfile, FILE *of, size_t if_level);
 	inline INCLUDE_LEVEL include_level_pop();
 
 	/*-------------------------------------------------------------*/
@@ -126,7 +126,7 @@ protected:
 
 	void   Reset(TCC_CONTEXT *tc, const char **preprocessors, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx);
 	sym_t  GetPreprocessor(const char *line, const char **pos);
-	bool   ReadLine();
+	int    ReadLine();
 	bool   SM_Run();
 	void   AddDependency(const char *prefix, const CC_STRING& filename);
 	CFile* GetIncludedFile(sym_t preprocessor, const char *line, FILE** outf);

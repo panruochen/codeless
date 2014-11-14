@@ -24,9 +24,6 @@ function prepare()
 function step1()
 {
 	TIME=$(env LANG=en_US date)
-	find \( -name '*.c' -o -name '*.h' -o -name '*.cpp' \) -print0 | xargs -0 sed -i \
-		-e 's/\<__TIME__\>/"'"$TIME"'"/' -e 's/\<__LINE__\>/0/' 
-
 	./configure
 	HAVE_CONFIGURED=y
 	make
@@ -42,8 +39,7 @@ function step2()
 	fi
 	HAVE_CONFIGURED=y
 	make clean
-	../../y-Make --yz-cc=gcc --yz-print-dependency --yz-print-command-line=commands.txt -j1 \
-#		--yz-clone-to=$WA/clone-to --yz-clone-from=$PWD
+	../../y-Make --yz-cc=gcc --yz-print-command-line=commands.txt -j1
 	yMAKE=$(executable_get)	
 	objcopy -O binary $yMAKE yy-2.bin
 	objdump -d $yMAKE > yy-2.asm

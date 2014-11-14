@@ -47,9 +47,9 @@ inline CFile *Cycpp::current_file()
 {  return include_levels.top().srcfile; }
 
 
-inline void Cycpp::include_level_push(CFile *srcfile, FILE *outfile, size_t if_level)
+inline void Cycpp::include_level_push(CFile *srcfile, FILE *of, size_t if_level)
 {
-	Cycpp::INCLUDE_LEVEL lvl(srcfile,outfile,if_level);
+	Cycpp::INCLUDE_LEVEL lvl(srcfile,of,if_level);
 	include_levels.push(lvl);
 }
 

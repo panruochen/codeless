@@ -104,6 +104,11 @@ inline const char * CC_STRING::c_str() const
     return NULL;
 }
 
+inline void CC_STRING::remove_last()
+{
+	if(std::string::size() > 0)
+		std::string::erase(std::string::end()-1);
+}
 
 #endif
 

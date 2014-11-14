@@ -40,6 +40,7 @@ public:
    void format(const char *fmt, va_list ap);
 
    inline bool isnull() const;
+   inline void remove_last();
 
 //   CC_STRING& operator=(const CC_STRING& s) { std::string::operator+=(s); return *this; }
 //   CC_STRING& operator=(const char c) { std::string::operator+=(c); return *this; }

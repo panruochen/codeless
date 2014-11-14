@@ -742,13 +742,11 @@ bool Cycpp::do_include(sym_t preprocessor, const char *line, const char **output
 	FILE *outf;
 	CFile *file;
 
-	if( raw_line == "#include <stdc-predef.h>\n" )
-	{ volatile int d = 1; }
 	file = GetIncludedFile(preprocessor, line, &outf);
 	if( file == NULL )
 		return false;
 	if(file->Open()) {
-		include_level_push(file, outf, conditionals.size());
+		include_level_push(file, NULL, conditionals.size());
 	} else {
 		gex.format("Cannot open `%s'", file->name.c_str());
 		return false;
@@ -760,10 +758,10 @@ bool Cycpp::do_include(sym_t preprocessor, const char *line, const char **output
 
 bool Cycpp::SM_Run()
 {
+	FILE *out_fp = include_levels.top().outfp;
 	const char *pos;
 	IF_VALUE result = IV_FALSE;
 	const char *output = raw_line.c_str();
-	FILE *out_fp = include_levels.top().outfile;
 	sym_t preprocessor;
 	CC_STRING expanded_line;
 
@@ -774,11 +772,14 @@ bool Cycpp::SM_Run()
 	dv_current_line = current_file()->line;
 //	fprintf(stderr, "ON %s:%u\n", dv_current_file, dv_current_line);
 
-	if( 0 == strcmp(dv_current_file, "./arch/x86/include/asm/boot.h") && dv_current_line == 22 )
+#if 0
+	if( include_levels.size() == 1 && 0 != strcmp(dv_current_file, "<command line>") && dv_current_line > 1)
 	{
-		//volatile int loop = 1;
-		//do {} while (loop);
+		volatile int loop = 1;
+		do {} while (loop);
 	}
+#endif
+
 	switch(preprocessor) {
 	case SSID_SHARP_IF:
 		if( current.curr_value != IV_FALSE ) 
@@ -905,7 +906,7 @@ void Cycpp::Reset(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepro
 	this->num_preprocessors = num_preprocessors;
 	this->tc                = tc;
 	if(ctx != NULL) {
-		this->depfile           = ctx->depfile;
+		this->depfile       = ctx->depfile;
 	} else {
 		this->depfile.clear();
 	}
@@ -969,7 +970,7 @@ sym_t Cycpp::GetPreprocessor(const char *line, const char **pos)
 //
 // Read and unfold one semantic line from the source file, stripping off any coments.
 //
-bool Cycpp::ReadLine()
+int Cycpp::ReadLine()
 {
 	enum {
 		STAT_INIT,
@@ -978,44 +979,84 @@ bool Cycpp::ReadLine()
 		STAT_BC,
 		STAT_ASTERISK,
 		STAT_FOLD,
-	} state, prev;
+
+		STAT_SQ,
+		STAT_DQ,
+		STAT_SQ_ESC,
+		STAT_DQ_ESC,
+	} state;
 	int c;
 	CFile *file = current_file();
 
+#if 0
+	if( strcmp(file->name.c_str(), "/usr/include/x86_64-linux-gnu/bits/types.h") == 0 && file->line == 120 )
+	{
+		volatile int loop = 1;
+		do {} while (loop);
+	}
+#endif
+
 	state = STAT_INIT;
 	while(1) {
-		prev = state;
 		c = file->ReadChar();
 		if(c == EOF) {
 			if(line.isnull())
-				return false;
+				return 0;
 			c = '\n';
+			if(state != STAT_INIT) {
+				gex = "Syntax error found";
+				return -1;
+			}
 			goto handle_last_line;
 		}
 	
 		raw_line += c;
 		if( c == '\r' ) /* Ignore carriage characters */
 			continue;
-		
+		if(c == '\n')
+			file->line++;
+
 		switch(state) {
 		case STAT_INIT:
-			if(c == '/')
+			switch(c) {
+			case '/':
 				state = STAT_SLASH;
-			else if(c == '\\')
+				break;
+			case '\\':
 				state = STAT_FOLD;
+				break;
+			case '"':
+				state = STAT_DQ;
+				break;
+			case '\'':
+				state = STAT_SQ;
+				break;
+			}
 			break;
 	
 		case STAT_SLASH:
-			if(c == '/') {
+			switch(c) {
+			case '/':
 				state = STAT_LC;
 				mark_comment_start();
-			} else if(c == '*') {
+				line.remove_last();
+				break;
+			case '*':
 				state = STAT_BC;
 				mark_comment_start();
-			} else
+				line.remove_last();
+				break;
+			case '"':
+				state = STAT_DQ;
+				break;
+			case '\'':
+				state = STAT_SQ;
+				break;
+			default:
 				state = STAT_INIT;
+			}
 			break;
-	
+
 		case STAT_LC: /* line comment */
 			if(c == '\n')
 				state = STAT_INIT;
@@ -1027,8 +1068,10 @@ bool Cycpp::ReadLine()
 			break;
 	
 		case STAT_ASTERISK: /* asterisk */
-			if(c == '/')
+			if(c == '/') {
 				state = STAT_INIT;
+				continue;
+			}
 			else if(c != '*')
 				state = STAT_BC;
 			break;
@@ -1036,26 +1079,57 @@ bool Cycpp::ReadLine()
 		case STAT_FOLD: /* folding the line */
 			if(c == '\t' || c == ' ')
 				;
-			else
+			else {
 				state = STAT_INIT;
+				continue;
+			}
+			break;
+
+		case STAT_DQ:
+			switch(c) {
+			case '\\':
+				state = STAT_DQ_ESC;
+				break;
+			case '"':
+				state = STAT_INIT;
+				break;
+			}
+			break;
+
+		case STAT_SQ:
+			switch(c) {
+			case '\\':
+				state = STAT_SQ_ESC;
+				break;
+			case '\'':
+				state = STAT_INIT;
+				break;
+			}
+			break;
+
+		case STAT_DQ_ESC:
+			state = STAT_DQ;
+			break;
+
+		case STAT_SQ_ESC:
+			state = STAT_SQ;
 			break;
 		}
 
-		if(c == '\n')
-			file->line++;
+		if(state != STAT_LC && state != STAT_BC && state != STAT_FOLD && state != STAT_ASTERISK)
+			line += c;
 
-handle_last_line:
 		if(state == STAT_INIT) {
-			if( prev == STAT_SLASH )
-				line += ('/');
-			if(prev != STAT_ASTERISK && prev != STAT_FOLD) {
-				line += (c);
-				if(c == '\n') 
-					break;
-			}
+handle_last_line:
+			if(c == '\n') 
+				break;
 		}
 	}
-	return true;
+	if( 0 && include_levels.size() == 1) {
+	fprintf(stderr, "*** %s", raw_line.c_str());
+	fprintf(stderr, "+++ %s", line.c_str());
+	}
+	return 1;
 }
 
 
@@ -1067,7 +1141,7 @@ handle_last_line:
 bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_preprocessors, CFile *infile,
 	CP_CONTEXT *ctx)
 {
-	FILE *out_fp = stdout;
+	FILE *out_fp;
 	int  dep_fd  = -1;
 	bool retval = false;
 	char tmp_outfile[64] = { 0 };
@@ -1117,14 +1191,12 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepr
 	include_level_push(infile, out_fp, conditionals.size());
 	INCLUDE_LEVEL ilevel;
 	while( 1 ) {
-		if( ReadLine() ) {
+		int rc ;
+		rc = ReadLine();
+		if( rc > 0 ) {
 			if( ! SM_Run() )
 				goto error;
-		} else {
-
-			if( include_levels.size() > 1 && include_levels.top().outfile )
-				fprintf(include_levels.top().outfile, "/****** [Cycpp] Finish expanding ******/\n");
-
+		} else if (rc == 0) {
 			ilevel = include_level_pop();
 			/****
 			if(lvl.if_level != conditionals.size()) {
@@ -1132,12 +1204,12 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepr
 				goto error;
 			}
 			****/
-
 			if(infile != ilevel.srcfile )
 				delete ilevel.srcfile;
 			if(include_levels.size() == 0)
 				break;
-		}
+		} else
+			goto error;
 		raw_line.clear();
 		line.clear();
 		new_line.clear();
@@ -1160,8 +1232,6 @@ error:
 			ilevel = include_level_pop();
 			if(infile != ilevel.srcfile)
 				delete ilevel.srcfile;
-			if(ilevel.outfile != NULL)
-				fclose(ilevel.outfile);
 		}
 	}
 
