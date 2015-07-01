@@ -68,12 +68,10 @@ CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING&
 	CC_STRING curdir;
 	struct stat st;
 
-
 	if( included_file.size() == 0 )
 		return CC_STRING("");
 	if( included_file[0] == '/' )
 		return included_file;
-
 	if(current_file.c_str() != NULL) {
 		curdir = fsl_dirname(current_file.c_str());
 	} else
@@ -353,7 +351,6 @@ int main(int argc, char *argv[])
 		setenv("YZ_CC_PATH", yctx.cc_path.c_str(), 1);
 		unsetenv("LANG");
 		unsetenv("LANGUAGE");
-
 		get_host_cc_predefined_macros(yctx.cc, yctx.predef_macros, yctx.cc_args);
 		if( ! yctx.nostdinc )
 			get_host_cc_search_dirs(yctx.cc, tcc_sys_search_dirs, yctx.cc_args);
