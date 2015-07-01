@@ -68,6 +68,12 @@ CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING&
 	CC_STRING curdir;
 	struct stat st;
 
+
+	if( included_file.size() == 0 )
+		return CC_STRING("");
+	if( included_file[0] == '/' )
+		return included_file;
+
 	if(current_file.c_str() != NULL) {
 		curdir = fsl_dirname(current_file.c_str());
 	} else
@@ -84,7 +90,7 @@ CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING&
 			return path;
 		}
 	}
-	
+
 	CC_ARRAY<CC_STRING>& dirs = std_search_dirs[!!quote_include];
 	for(i = 0; i < dirs.size(); i++) {
 		path = dirs[i];
@@ -218,7 +224,7 @@ static void save_command_line(const CC_STRING& filename, const CC_STRING& host_c
 	s += ' ';
 	s += cc_args;
 	s += "  ## ";
-	s += my_args;	
+	s += my_args;
 	s += "\n\n";
 	fsl_mp_append(filename.c_str(), s.c_str(), s.size());
 }
@@ -247,12 +253,12 @@ static FILE *pyext_exec(const CC_STRING& host_cc, const CC_STRING entryf, const 
 	CC_STRING cc2;
 
 	cc2 = get_cc(host_cc);
-	if(cc2.isnull()) 
+	if(cc2.isnull())
 		fatal(127, "%s is not supported yet", host_cc.c_str());
 
 	cl  = "python3 -c 'import sys\nsys.path.append(\""
-		+ my_dir 
-		+ "/pyext\")\nimport " 
+		+ my_dir
+		+ "/pyext\")\nimport "
 		+ cc2
 		+ "\n";
 	cl += cc2 + "." + entryf + "()";
@@ -308,7 +314,7 @@ static void do_include_files(Cycpp& yc, TCC_CONTEXT *tc, const CC_ARRAY<CC_STRIN
 
 	CRealFile file;
 	CC_STRING path;
-	
+
 	for(size_t i = 0; i < ifiles.size(); i++) {
 		path = get_include_file_path(ifiles[i], CC_STRING(""), true);
 		if( path.isnull() )
@@ -341,13 +347,13 @@ int main(int argc, char *argv[])
 			FILE *pipe;
 			CC_STRING cmd = "which " + yctx.cc;
 			pipe = popen(cmd.c_str(), "r");
-			if( getline(pipe, yctx.cc_path) <= 0 ) 
+			if( getline(pipe, yctx.cc_path) <= 0 )
 				fatal(2, "Cannot run: \"%s\"\n", cmd.c_str());
 		}
 		setenv("YZ_CC_PATH", yctx.cc_path.c_str(), 1);
 		unsetenv("LANG");
 		unsetenv("LANGUAGE");
-	
+
 		get_host_cc_predefined_macros(yctx.cc, yctx.predef_macros, yctx.cc_args);
 		if( ! yctx.nostdinc )
 			get_host_cc_search_dirs(yctx.cc, tcc_sys_search_dirs, yctx.cc_args);
@@ -369,7 +375,7 @@ int main(int argc, char *argv[])
 	static const char *preprocessors[] = {
 		"#define", "#undef", "#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif", "#include", "#include_next"
 	};
-	
+
 	if( yctx.source_files.size() == 0 ) {
 		exit(0);
 	}
