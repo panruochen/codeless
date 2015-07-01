@@ -6,15 +6,15 @@
 # tree during initial phase of development. It is designed to manage one whole
 # project from within one single makefile and to be easily adapted to
 # different directory hierarchy by simply setting user configurable variables.
-# This script is expected to be used with gcc toolchains on bash-compatible 
+# This script is expected to be used with gcc toolchains on bash-compatible
 # shell.
 #
-# Author: Pan Ruochen <kudoos@163.com>
+# Author: Pan Ruochen <ijkxyz@msn.com>
 # Date:   2012/10/10
 #
 #
 # You can get the latest version from here:
-# https://github.com/panruochen/common_Makefile
+# https://github.com/panruochen/dragoneye
 #
 ###############################################################################
 
@@ -47,7 +47,7 @@
 # ====================================================================================================
 # INDEPENDENT_OF_MAKEFILE_LIST:    This project is independent of the makefile list. That is any
 #                                  change of the makefile list will not cause remaking of the project.
-# CENTRALIZED_SINGLE_DEPEND_FILE:  Use one single dependency file instead of 
+# CENTRALIZED_SINGLE_DEPEND_FILE:  Use one single dependency file instead of
 #                                  generating one dependency file for each source file.
 # VERBOSE_COMMAND:                 Display verbose commands instead of short commands during
 #                                  the make process.
@@ -96,7 +96,7 @@ objdir := $(patsubst ./%,%,$(if $(OBJECT_DIR),$(call __rpath,$(OBJECT_DIR)/)))
 objdir_remap = $(if $(objdir),$(subst ..,!!,$1),$1)
 
 ## Combine compiler flags togather.
-CFLAGS = $(foreach i,$(inc-y),-I$i) $(DEFINES) $(EXTRA_CFLAGS) 
+CFLAGS = $(foreach i,$(inc-y),-I$i) $(DEFINES) $(EXTRA_CFLAGS)
 
 ## Output file types:
 ##  EXE:  Application
