@@ -25,78 +25,80 @@
 # GNU_TOOLCHAIN_PREFIX:   The perfix of gnu toolchain.
 # ====================================================================================================
 # CFLAGS:         Compiler flags.
-# inc-y:          Header include paths.
-# src-y:          Sources. The items ending with a trailing / are regarded as directories, the others
-#                 are regareded as files. The files with specified suffixes in those directories will
+# INCS:           Header files include paths.
+# SRCS:           Sources. The entriess ending with a trailing / are taken as directories, the others
+#                 are taken as files. The files with specified extension names in those directories will
 #                 be automatically involved in compilation.
-# compile[X]:     User defined command to generate targets for the prerequisites
-#                 whith the specified suffix X (i.e, X could be c, cpp, etc).
+# COMPILE[X]:     User defined command to generate targets for the prerequisites
+#                 whith the specified extension name X (i.e, X could be c, cpp, etc).
 #
 # EXCLUDE_FILES:  The files that are not included during compilation.
-# OBJECT_DIR:     The directory where object files are output.
+# OBJ_DIR:        The directory where object files are output.
 # LDFLAGS:        Linker flags.
-# STRIP_UNUSED:   Remove all unreferenced functions and data during linking.
+# STRIP_UNUSED:   Remove all unreferenced functions and data on linking.
 # ====================================================================================================
 # TARGET_TYPE:    The target type which can be application, shared object, archive library etc.
-# TARGET:         The path name of the final target.
-# TARGET_DEPENDS: The dependent targets by the final target.
+# TARGET:         The target name with path.
+# TARGET_DEPENDS: The dependencies of the target.
 # ====================================================================================================
-# SOURCE_SUFFIXES:The suffix names of source files.
-# OBJECT_SUFFIX:  The suffix name of object files.
-# DEPEND_SUFFIX:  The suffix name of dependency files.
+# SRC_EXTS:       The extension names of source files.
+# OBJ_EXT:        The extension name of object files.
+# DEP_EXT:        The extension name of dependency files.
 # ====================================================================================================
 # INDEPENDENT_OF_MAKEFILE_LIST:    This project is independent of the makefile list. That is any
 #                                  change of the makefile list will not cause remaking of the project.
 # CENTRALIZED_SINGLE_DEPEND_FILE:  Use one single dependency file instead of
 #                                  generating one dependency file for each source file.
-# VERBOSE_COMMAND:                 Display verbose commands instead of short commands during
+# VERBOSE_COMMANDS:                Display verbose commands instead of short commands during
 #                                  the make process.
 #-----------------------------------------------------------------------------------------------------#
 
+
 # Quiet commands
-ifeq ($(VERBOSE_COMMAND),)
-Q           = @
-Q_compile   = @echo '  CC     $$< => $$@';
-Q_link      = @echo '  LD     $@';
-Q_ar        = @echo '  AR     $@';
-Q_mkdir     = @echo '  MKDIR  $1';
-Q_clean     = @echo '  CLEAN';
-Q_distclean = @echo '  DISTCLEAN';
+ifeq ($(VERBOSE_COMMANDS),)
+q           = @
+q_compile   = @echo '  CC     $$< => $$@';
+q_link      = @echo '  LD     $@';
+q_ar        = @echo '  AR     $@';
+q_mkdir     = @echo '  MKDIR  $1';
+q_clean     = @echo '  CLEAN';
+q_distclean = @echo '  DISTCLEAN';
 endif
 
-O := $(if $(OBJECT_SUFFIX),$(OBJECT_SUFFIX),o)
-D := $(if $(DEPEND_SUFFIX),$(DEPEND_SUFFIX),d)
+O := $(if $(OBJ_EXT),$(OBJ_EXT),o)
+D := $(if $(DEP_EXT),$(DEP_EXT),d)
 
-ifndef SOURCE_SUFFIXES
-SOURCE_SUFFIXES := c cpp cc cxx S s
+ifndef SRC_EXTS
+SRC_EXTS := c cpp cc cxx S s
 endif
-source_filters := $(foreach i,$(SOURCE_SUFFIXES),%.$i)
+source_filters := $(foreach i,$(SRC_EXTS),%.$i)
 
-GCC    := $(GNU_TOOLCHAIN_PREFIX)gcc
+GCC     := $(GNU_TOOLCHAIN_PREFIX)gcc
+machine := $(shell $(GCC) -dumpmachine 2>/dev/null)
 
 do_ifeq  = $(if $(subst $1,,$2),,$3)
 do_ifneq = $(if $(subst $1,,$2),$3)
 
 __rpath = $(strip $(subst /./,/, \
-	$(eval __internal_t = $(subst ././,./,$(subst //,/,$(subst \\,/,$1)))) \
-	$(if $(subst $(__internal_t),,$1),$(call __rpath,$(__internal_t)),$1)))
+	$(eval __ivx = $(subst ././,./,$(subst //,/,$(subst \\,/,$1)))) \
+	$(if $(subst $(__ivx),,$1),$(call __rpath,$(__ivx)),$1)))
 
-rpath = $(sort $(eval __internal_t := $(call __rpath,$1)) \
-	$(filter ./,$(__internal_t)) \
-	$(patsubst ./%,%,$(__internal_t)))
+rpath = $(sort $(eval __ivx := $(call __rpath,$1)) \
+	$(filter ./,$(__ivx)) \
+	$(patsubst ./%,%,$(__ivx)))
 
-OBJECT_DIR := $(strip $(OBJECT_DIR))
-objdir := $(patsubst ./%,%,$(if $(OBJECT_DIR),$(call __rpath,$(OBJECT_DIR)/)))
+OBJ_DIR := $(strip $(OBJ_DIR))
+objdir := $(patsubst ./%,%,$(if $(OBJ_DIR),$(call __rpath,$(OBJ_DIR)/)))
 
 #-------------------------------------------------------------------#
 # Replace the pattern .. with !! in the path names in order that    #
 # no directories are out of the object directory                    #
 #  $1 -- The path names                                             #
 #-------------------------------------------------------------------#
-objdir_remap = $(if $(objdir),$(subst ..,!!,$1),$1)
+remap_objdir = $(if $(objdir),$(subst ..,!!,$1),$1)
 
 ## Combine compiler flags togather.
-CFLAGS = $(foreach i,$(inc-y),-I$i) $(DEFINES) $(EXTRA_CFLAGS)
+CFLAGS = $(foreach i,$(INCS),-I$i) $(DEFINES) $(EXTRA_CFLAGS)
 
 ## Output file types:
 ##  EXE:  Application
@@ -124,7 +126,7 @@ else
 single_depend_file := $(objdir)depend
 endif
 
-g_makefile_list = $(if $(INDEPENDENT_OF_MAKEFILE_LIST),,$(MAKEFILE_LIST))
+makefile_list = $(if $(INDEPENDENT_OF_MAKEFILE_LIST),,$(MAKEFILE_LIST))
 
 #--------------------------------------------------#
 # Exclude user-specified files from source list.   #
@@ -137,9 +139,9 @@ exclude = $(filter-out $(EXCLUDE_FILES),$1)
 #  $1 -- The file names                       #
 #  $2 -- The suffixes                         #
 #---------------------------------------------#
-get_object_names  = $(call objdir_remap,$(addprefix $(objdir),$(foreach i,$2,$(patsubst %.$i,%.$O,$(filter %.$i,$1)))))
+get_object_names  = $(call remap_objdir,$(addprefix $(objdir),$(foreach i,$2,$(patsubst %.$i,%.$O,$(filter %.$i,$1)))))
 
-cmd_compile = $(Q_compile)$(if $(compile[$1]),$(compile[$1]),$(GCC) -I$$(dir $$<) $(CFLAGS) $(CFLAGS[$$<]) -c -o $$@ $$<)
+cmd_compile = $(q_compile)$(if $(COMPILE[$1]),$(COMPILE[$1]),$(GCC) -I$$(dir $$<) $(CFLAGS) $(CFLAGS[$$<]) -c -o $$@ $$<)
 
 #--------------------------------------------------------------------#
 # Set up a rule for compiling multiple sources files                 #
@@ -148,10 +150,10 @@ cmd_compile = $(Q_compile)$(if $(compile[$1]),$(compile[$1]),$(GCC) -I$$(dir $$<
 #  $2 -- The Source suffix                                           #
 #  $3 -- Equal to $(wildcard $1*.$2)                                 #
 #--------------------------------------------------------------------#
-xr_compile_multiple = $(if $3,$(call __xr_compile_multiple,$(call get_object_names,$3,$2),$1,$2))
+compile_multiple = $(if $3,$(call __compile_multiple,$(call get_object_names,$3,$2),$1,$2))
 
-define __xr_compile_multiple
-$(patsubst ./%,%,$1: $(call objdir_remap,$(objdir)$2%.$(O)): $2%.$3) $(g_makefile_list)
+define __compile_multiple
+$(patsubst ./%,%,$1: $(call remap_objdir,$(objdir)$2%.$(O)): $2%.$3) $(makefile_list)
 	$(call cmd_compile,$3)
 
 endef
@@ -161,8 +163,8 @@ endef
 #  $1 -- The prerequisite                                      #
 #  $2 -- The Target                                            #
 #--------------------------------------------------------------#
-define xr_compile_single
-$2: $1 $(g_makefile_list)
+define compile_single
+$2: $1 $(makefile_list)
 	$(call cmd_compile,$(patsubst .%,%,$(suffix $1)))
 
 endef
@@ -172,10 +174,10 @@ endef
 # Set up a rule for make a directory.         #
 #  $1 -- The directory                        #
 #---------------------------------------------#
-xr_mkdir = $(if $1,$(call __xr_mkdir,$1))
+mkdir = $(if $1,$(call __mkdir,$1))
 
-define __xr_mkdir
-$1: ; $(Q_mkdir)mkdir -p $1
+define __mkdir
+$1: ; $(q_mkdir)mkdir -p $1
 
 endef
 
@@ -183,22 +185,22 @@ endef
 #-------------------------------------#
 # Get the list of all source files    #
 #-------------------------------------#
-src-f    = $(call rpath,$(filter $(source_filters),$(src-y)))
-src-d    = $(call rpath,$(filter %/,$(src-y)))
-sources  = $(patsubst ./%,%,$(foreach i,$(SOURCE_SUFFIXES),$(foreach j,$(src-d),$(wildcard $j*.$i))))
-src-f   := $(foreach i,$(src-f),$(if $(filter $i,$(sources)),,$i))
-sources := $(call exclude,$(sources) $(src-f))
+src_f    = $(call rpath,$(filter $(source_filters),$(SRCS)))
+src_d    = $(call rpath,$(filter %/,$(SRCS)))
+sources  = $(patsubst ./%,%,$(foreach i,$(SRC_EXTS),$(foreach j,$(src_d),$(wildcard $j*.$i))))
+src_f   := $(foreach i,$(src_f),$(if $(filter $i,$(sources)),,$i))
+sources := $(call exclude,$(sources) $(src_f))
 
 ifeq ($(strip $(sources)),)
-$(error Empty source list! Please check both src-y and SOURCE_SUFFIXES are correctly set.)
+$(error Empty source list! Please check both SRCS and SRC_EXTS are correctly set.)
 endif
 
-object_dirs = $(call objdir_remap,$(patsubst %/./,%,$(addprefix $(objdir),$(sort $(dir $(sources))))) $(dir $(TARGET)))
+object_dirs = $(call remap_objdir,$(patsubst %/./,%,$(addprefix $(objdir),$(sort $(dir $(sources))))) $(dir $(TARGET)))
 
 #-------------------------------------#
 # Get the list of all object files    #
 #-------------------------------------#
-objects = $(call get_object_names,$(sources),$(SOURCE_SUFFIXES))
+objects = $(call get_object_names,$(sources),$(SRC_EXTS))
 
 
 #--------------------------------------------------------#
@@ -212,23 +214,23 @@ all: $(object_dirs) $(TARGET)
 #----------------------------------------------------#
 # Construct Rules
 #----------------------------------------------------#
-$(eval $(foreach i,$(src-d),$(foreach j,$(SOURCE_SUFFIXES),\
-	     $(call xr_compile_multiple,$(filter-out ./,$i),$j,$(call exclude,$(wildcard $(filter-out ./,$i)*.$j)))))\
-       $(foreach i,$(call exclude,$(src-f)),$(call xr_compile_single,$i,\
-	     $(call get_object_names,$i,$(SOURCE_SUFFIXES))))\
-       $(foreach i,$(object_dirs),$(call xr_mkdir,$i)))
+$(eval $(foreach i,$(src_d),$(foreach j,$(SRC_EXTS),\
+	     $(call compile_multiple,$(filter-out ./,$i),$j,$(call exclude,$(wildcard $(filter-out ./,$i)*.$j)))))\
+       $(foreach i,$(call exclude,$(src_f)),$(call compile_single,$i,\
+	     $(call get_object_names,$i,$(SRC_EXTS))))\
+       $(foreach i,$(object_dirs),$(call mkdir,$i)))
 
 #------------------------------------#
 # Command to make directory          #
 #  $1 -- The directory to be made    #
 #------------------------------------#
 define cmd_mkdir
-$(Q)if test ! -d "$1"; then $(Q_mkdir)mkdir -p "$1"; fi
+$(q)if test ! -d "$1"; then $(q_mkdir)mkdir -p "$1"; fi
 
 endef
 
 ifneq ($(single_depend_file),)
-$(single_depend_file): $(sources) $(filter-out $@,$(g_makefile_list)) $(objdir)
+$(single_depend_file): $(sources) $(filter-out $@,$(makefile_list)) $(objdir)
 	$(GCC) $(CFLAGS) -MM -MG $(sources) | \
 sed 's#\([^[:space:]]\+\)\.$O:\s\([^[:space:]]\+\)\.\([^[:space:].]\+\s\?\)#$(objdir)\2.$O: \2.\3#g' > $@
 endif
@@ -236,7 +238,7 @@ endif
 ifeq ($(TARGET_TYPE),AR)
 $(TARGET): AR := $(GNU_TOOLCHAIN_PREFIX)ar
 $(TARGET): $(TARGET_DEPENDS) $(objects)
-	$(Q_ar)rm -f $@ && $(AR) rcvs $@ $(objects)
+	$(q_ar)rm -f $@ && $(AR) rcvs $@ $(objects)
 else
 
 ifeq ($(TARGET_TYPE),BIN)
@@ -252,14 +254,14 @@ endif
 
 $(tmp_target): LD = $(if $(strip $(filter %.cpp %.cc %.cxx,$(sources))),$(GNU_TOOLCHAIN_PREFIX)g++,$(GCC))
 $(tmp_target): $(TARGET_DEPENDS) $(objects)
-	$(Q_link)$(LD) $(LDFLAGS) $(objects) $(LIBS) -o $(tmp_target)
+	$(q_link)$(LD) $(LDFLAGS) $(objects) $(LIBS) -o $(tmp_target)
 
 endif
 
 clean:
-	$(Q_clean)rm -rf $(filter-out ./,$(objdir)) $(TARGET) $(objects)
+	$(q_clean)rm -rf $(filter-out ./,$(objdir)) $(TARGET) $(objects)
 distclean: clean
-	$(Q_distclean)find -name '*.$O' -o -name '*.$D' | xargs rm -f; $(if $(single_depend_file),rm -f $(single_depend_file))
+	$(q_distclean)find -name '*.$O' -o -name '*.$D' | xargs rm -f; $(if $(single_depend_file),rm -f $(single_depend_file))
 printvars:
 	@echo CFLAGS:  "$(CFLAGS)"
 	@echo LDFLAGS: "$(LDFLAGS)"
