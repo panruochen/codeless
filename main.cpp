@@ -72,9 +72,9 @@ CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING&
 		return CC_STRING("");
 	if( included_file[0] == '/' )
 		return included_file;
-	if(current_file.c_str() != NULL) {
+	if(current_file.c_str() != NULL)
 		curdir = fsl_dirname(current_file.c_str());
-	} else
+	else
 		curdir = ".";
 	count = 0;
 	path  = curdir;
@@ -396,6 +396,7 @@ int main(int argc, char *argv[])
 				yctx.depfile = MakeDepFileName(current_file);
 			else
 				yctx.depfile = yctx.save_dep_file;
+
 		}
 
 		file.SetFileName(current_file);

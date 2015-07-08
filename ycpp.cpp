@@ -143,7 +143,7 @@ static bool DoCalculate(CToken& opnd1, sym_t opr, CToken& opnd2, CToken& result,
 		if(opnd1.attr == CToken::TA_IDENT) {
 			opnd1.attr    = CToken::TA_UINT;
 			opnd1.u32_val = 0;
-		} 
+		}
 		if((opr != SSID_LOGIC_NOT && opr != SSID_BITWISE_NOT) && opnd2.attr == CToken::TA_IDENT  ) {
 			opnd2.attr    = CToken::TA_UINT;
 			opnd2.u32_val = 0;
@@ -255,16 +255,16 @@ static bool DoCalculationOnStackTop(TCC_CONTEXT *tc, sym_t opr, CC_STACK<CToken>
 		opnd_stack.pop(c);
 		opnd_stack.pop(b);
 		opnd_stack.pop(a);
-		
+
 		log(DML_DEBUG, "%s ? %s : %s\n", TOKEN_NAME(a), TOKEN_NAME(b), TOKEN_NAME(c));
 		result = a.u32_val ? b : c;
 		goto done;
 	} else if( opr != SSID_LOGIC_NOT && opr != SSID_BITWISE_NOT ) {
-		if( ! opnd_stack.pop(b) || ! opnd_stack.pop(a)) 
+		if( ! opnd_stack.pop(b) || ! opnd_stack.pop(a))
 			goto error_no_operands;
 		log(DML_DEBUG, "%s %s %s\n", TOKEN_NAME(a), TR(tc,opr), TOKEN_NAME(b));
 	} else {
-		if( ! opnd_stack.pop(a) ) 
+		if( ! opnd_stack.pop(a) )
 			goto error_no_operands;
 		log(DML_DEBUG, "! %s\n", TOKEN_NAME(a));
 	}
@@ -368,7 +368,7 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 		}
 		return IV_UNKNOWN;
 	}
-	
+
 	line = expansion.c_str();
 	if(dflag) {
 		log(DML_RUNTIME, "EXP: %s\n", line);
@@ -617,7 +617,7 @@ static CC_STRING MakeSemaName(const CC_STRING& filename)
 	CC_STRING sname;
 	const char *p;
 	char c;
-	
+
 	for(p = filename.c_str(); (c = *p) != 0; p++) {
 		if(c == '/' || c == '\\')
 			sname += '-';
@@ -674,10 +674,10 @@ CFile *Cycpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 		gex.format("Invalid include preprocessor: %s", raw_line.c_str());
 		goto done;
 	}
-	ifpath = get_include_file_path(itoken, current_file()->name, 
+	ifpath = get_include_file_path(itoken, current_file()->name,
 		style == '"', preprocessor == SSID_SHARP_INCLUDE_NEXT, &in_sys_dir);
 	if(ifpath.isnull()) {
-		gex.format("Cannot find include file \"%s\"", itoken.c_str()); 
+		gex.format("Cannot find include file \"%s\"", itoken.c_str());
 		goto done;
 	}
 
@@ -720,8 +720,8 @@ CFile *Cycpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 			}
 			ifpath += suffix;
 		}
-	} 
-	
+	}
+
 
 	CRealFile *file;
 	new_line = (iline.isnull() ?  raw_line : iline);
@@ -782,15 +782,15 @@ bool Cycpp::SM_Run()
 
 	switch(preprocessor) {
 	case SSID_SHARP_IF:
-		if( current.curr_value != IV_FALSE ) 
+		if( current.curr_value != IV_FALSE )
 			result = (IF_VALUE) expression_evaluate(tc, pos, &gex);
 		goto handle_if_branch;
 	case SSID_SHARP_IFNDEF:
-		if( current.curr_value != IV_FALSE ) 
+		if( current.curr_value != IV_FALSE )
 			result = (IF_VALUE) symbol_definition_check(tc, pos, true, NULL, &gex);
 		goto handle_if_branch;
 	case SSID_SHARP_IFDEF:
-		if( current.curr_value != IV_FALSE ) 
+		if( current.curr_value != IV_FALSE )
 			result = (IF_VALUE) symbol_definition_check(tc, pos, false, NULL, &gex);
 handle_if_branch:
 
@@ -813,7 +813,7 @@ handle_if_branch:
 		result = (IF_VALUE) expression_evaluate(tc, pos, &gex);
 		if( !gv_strict_mode && result == IV_UNKNOWN)
 			goto done;
-		
+
 		/*
 		 *  Transformation on the condition of:
 		 *  1) #if 0
@@ -868,15 +868,15 @@ handle_if_branch:
 			goto print_and_exit;
 
 		switch(preprocessor) {
-		  case SSID_SHARP_DEFINE: 
-			do_define(pos);			
+		  case SSID_SHARP_DEFINE:
+			do_define(pos);
 			break;
 		  case SSID_SHARP_UNDEF:
 			handle_undef(tc, pos);
 			break;
 		  case SSID_SHARP_INCLUDE:
 		  case SSID_SHARP_INCLUDE_NEXT:
-			if( !gv_strict_mode ) 
+			if( !gv_strict_mode )
 				do_include(preprocessor, pos, &output);
 			break;
 		  default:
@@ -918,7 +918,7 @@ void Cycpp::Reset(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepro
 	assert(include_levels.size() == 0);
 
 	CC_STRING tmpath;
-	
+
 	raw_line.clear();
 	line.clear();
 	dependencies.clear();
@@ -1009,7 +1009,7 @@ int Cycpp::ReadLine()
 			}
 			goto handle_last_line;
 		}
-	
+
 		raw_line += c;
 		if( c == '\r' ) /* Ignore carriage characters */
 			continue;
@@ -1033,7 +1033,7 @@ int Cycpp::ReadLine()
 				break;
 			}
 			break;
-	
+
 		case STAT_SLASH:
 			switch(c) {
 			case '/':
@@ -1061,12 +1061,12 @@ int Cycpp::ReadLine()
 			if(c == '\n')
 				state = STAT_INIT;
 			break;
-	
+
 		case STAT_BC: /* block comments */
 			if(c == '*')
 				state = STAT_ASTERISK;
 			break;
-	
+
 		case STAT_ASTERISK: /* asterisk */
 			if(c == '/') {
 				state = STAT_INIT;
@@ -1075,7 +1075,7 @@ int Cycpp::ReadLine()
 			else if(c != '*')
 				state = STAT_BC;
 			break;
-	
+
 		case STAT_FOLD: /* folding the line */
 			if(c == '\t' || c == ' ')
 				;
@@ -1121,7 +1121,7 @@ int Cycpp::ReadLine()
 
 		if(state == STAT_INIT) {
 handle_last_line:
-			if(c == '\n') 
+			if(c == '\n')
 				break;
 		}
 	}
@@ -1142,7 +1142,6 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepr
 	CP_CONTEXT *ctx)
 {
 	FILE *out_fp;
-	int  dep_fd  = -1;
 	bool retval = false;
 	char tmp_outfile[64] = { 0 };
 	CC_STRING bakfile;
@@ -1168,7 +1167,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepr
 		}
 		if( ctx->outfile.isnull() )
 			out_fp = NULL;
-		else if( IS_STDOUT(ctx->outfile) ) 
+		else if( IS_STDOUT(ctx->outfile) )
 			out_fp = stdout;
 		else {
 			int fd;
@@ -1185,8 +1184,23 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepr
 
 	Reset(tc, preprocessors, num_preprocessors, infile, ctx);
 
-	if(depfile.c_str() != NULL)
+	if(depfile.c_str() != NULL) {
+		size_t j;
+		CC_STRING ipath;
+		bool in_sys_dir;
+
 		AddDependency("", infile->name);
+		for(j = 0; j < ctx->imacro_files.size(); j++) {
+			ipath = get_include_file_path(ctx->imacro_files[j], current_file()->name, true, false, &in_sys_dir);
+			if(!in_sys_dir)
+				AddDependency("  ", ipath);
+		}
+		for(j = 0; j < ctx->include_files.size(); j++) {
+			ipath = get_include_file_path(ctx->include_files[j], current_file()->name, true, false, &in_sys_dir);
+			if(!in_sys_dir)
+				AddDependency("  ", ipath);
+		}
+	}
 
 	include_level_push(infile, out_fp, conditionals.size());
 	INCLUDE_LEVEL ilevel;
@@ -1237,13 +1251,11 @@ error:
 
 	if(out_fp != NULL && out_fp != stdout)
 		fclose(out_fp);
-	if(dep_fd > 0)
-		close(dep_fd);
 
 	 if( retval && ctx != NULL ) {
 		CC_STRING semname;
 		sem_t *sem;
-		
+
 		semname = MakeSemaName(infile->name);
 		sem = sem_open(semname.c_str(), O_CREAT, 0666, 1);
 		sem_wait(sem);
@@ -1257,7 +1269,7 @@ error:
 		sem_unlink(semname.c_str());
 	} else
 		unlink(tmp_outfile);
- 
+
 	return retval;
 }
 
