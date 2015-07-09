@@ -106,42 +106,12 @@ static CC_STRING DoQuotes(const CC_STRING& o)
 	return ns;
 }
 
-
-
-int CP_CONTEXT::via_file_read(const char *filename, char ***pargv)
-{
-	const int N = 64;
-	int argc, n;
-	char **argv;
-	FILE *fp = fopen(filename, "r");
-	if(fp == NULL)
-		return -errno;
-	n    = 0;
-	argc = 1;
-	argv = NULL;
-	while(1) {
-		char buf[2048];
-		if( fscanf(fp, "%s", buf) == EOF )
-			break;
-		if(argc >= n) {
-			n += N;
-			argv = (char **) realloc(argv, sizeof(char *) * n);
-		}
-		argv[argc++] = strdup(buf);
-	}
-	fclose(fp);
-	*pargv = argv;
-	return argc;
-}
-
-
 enum {
 	C_OPTION_IMACROS = 324,
 	C_OPTION_INCLUDE,
 	C_OPTION_ISYSTEM,
 	C_OPTION_NOSTDINC,
 	C_OPTION_SOURCE,
-	C_OPTION_VIA,
 
 	C_OPTION_PRINT_COMMAND_LINE,
 	C_OPTION_PRINT_DEPENDENCY,
@@ -196,7 +166,7 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 			save_cc_args();
 			break;
 		case 'I':
-			ujoin(search_dirs_I, optarg);
+			ujoin(search_dirs, optarg);
 			save_cc_args();
 			break;
 		case 'D':
@@ -207,37 +177,10 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 			new_undef(predef_macros, optarg);
 			save_cc_args();
 			break;
-		case 'J':
-			ujoin(search_dirs_J, optarg);
-			save_cc_args();
-			break;
+
 		case C_OPTION_SOURCE:
 			source_files.push_back(optarg);
 			break;
-		case C_OPTION_VIA:
-			do {
-				int i, argc2, saved_optind, saved_argc;
-				char **argv2, **saved_argv;
-				
-				argc2 = via_file_read(optarg, &argv2);
-				if(argc2 < 0) {
-					retval = argc2;
-					goto done;
-				}
-				saved_optind = optind;
-				saved_argc   = this->argc;
-				saved_argv   = this->argv;
-				get_options(argc2, argv2, short_options, long_options);
-				optind       = saved_optind;
-				this->argc   = saved_argc;
-				this->argv   = saved_argv;
-				for(i = 1; i < argc2; i++)
-					free(argv2[i]);
-				free(argv2);
-				save_cc_args();
-			} while(0);
-		  break;
-
 		case C_OPTION_PRINT_COMMAND_LINE:
 			clfile = optarg;
 			save_my_args();
@@ -264,12 +207,12 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 			cc_path = optarg;
 			save_my_args();
 			break;
-		
+
 		case C_OPTION_STRICT_MODE:
 			gv_strict_mode = true;
 			save_my_args();
 			break;
-		
+
 		case C_OPTION_DEBUG:
 			do {
 				int level;
@@ -315,7 +258,6 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 	}
 	retval = 0;
 
-done:
 	levels--;
 	return retval;
 }
@@ -332,7 +274,6 @@ int CP_CONTEXT::get_options(int argc, char *argv[])
 		{"yz-cc-path",            1, 0, C_OPTION_CC_PATH },
 		{"yz-strict-mode",        1, 0, C_OPTION_STRICT_MODE },
 		{"yz-debug",              1, 0, C_OPTION_DEBUG },
-		{"via",      1, 0, C_OPTION_VIA},
 		{"include",  1, 0, C_OPTION_INCLUDE},
 		{"imacros",  1, 0, C_OPTION_IMACROS},
 		{"isystem",  1, 0, C_OPTION_ISYSTEM},
@@ -343,7 +284,7 @@ int CP_CONTEXT::get_options(int argc, char *argv[])
 	opterr = 0;
 	levels = 0;
 	nostdinc = false;
-	retval = get_options(argc, argv, "I:D:U:J:", long_options);
+	retval = get_options(argc, argv, "I:D:U:", long_options);
 	return retval;
 }
 
@@ -366,3 +307,63 @@ void CP_CONTEXT::save_my_args()
 		my_args += DoQuotes(argv[i]);
 	}
 }
+
+/*
+-I directory
+    Change the algorithm for searching for headers whose names are not absolute pathnames to look
+	in the directory named by the directory pathname before looking in the usual places. Thus,
+	headers whose names are enclosed in double-quotes ( "" ) shall be searched for first in the directory
+	of the file with the #include line, then in directories named in -I options, and last in the usual places.
+	For headers whose names are enclosed in angle brackets ( "<>" ), the header shall be searched for only
+	in directories named in -I options and then in the usual places. Directories named in -I options shall
+	be searched in the order specified. Implementations shall support at least ten instances of this option
+	in a single c99 command invocation.
+*/
+
+CC_STRING CP_CONTEXT::get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
+	bool quote_include, bool include_next, bool *in_sys_dir)
+{
+	size_t i, count;
+	CC_STRING path;
+	CC_STRING curdir;
+	struct stat st;
+
+	if( included_file.size() == 0 )
+		return CC_STRING("");
+	if( included_file[0] == '/' )
+		return included_file;
+	if(current_file.c_str() != NULL) {
+		curdir = fsl_dirname(current_file.c_str());
+		curdir += '/';
+	}
+	count = 0;
+	path  = curdir;
+	path += included_file;
+	if(quote_include && stat(path.c_str(), &st) == 0 ) {
+		++count;
+		if( ! include_next ) {
+			if(in_sys_dir != NULL)
+				*in_sys_dir = find(compiler_search_dirs, curdir);
+			return path;
+		}
+	}
+
+	CC_ARRAY<CC_STRING>& dirs = search_dirs;
+	for(i = 0; i < dirs.size(); i++) {
+		path = dirs[i];
+		path += '/';
+		path += included_file;
+
+		if( stat(path.c_str(), &st) == 0 ) {
+			++count;
+			if( ! include_next || count == 2) {
+				if(in_sys_dir != NULL)
+					*in_sys_dir = find(compiler_search_dirs, dirs[i]);
+				return path;
+			}
+		}
+	}
+	path.clear();
+	return path;
+}
+

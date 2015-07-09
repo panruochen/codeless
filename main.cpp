@@ -14,111 +14,21 @@
 #include "ycpp.h"
 #include "utils.h"
 
-
 #define PROGRAM_NAME  "ycpp"
-
-static CC_ARRAY<CC_STRING>  std_search_dirs[2]; /* 0 -- #include <file>
-												 * 1 -- #include "file"
-												 **/
-static CC_ARRAY<CC_STRING>  tcc_sys_search_dirs;
 
 static CC_STRING my_dir;
 
-
-
-/*
--I directory
-    Change the algorithm for searching for headers whose names are not absolute pathnames to look
-	in the directory named by the directory pathname before looking in the usual places. Thus,
-	headers whose names are enclosed in double-quotes ( "" ) shall be searched for first in the directory
-	of the file with the #include line, then in directories named in -I options, and last in the usual places.
-	For headers whose names are enclosed in angle brackets ( "<>" ), the header shall be searched for only
-	in directories named in -I options and then in the usual places. Directories named in -I options shall
-	be searched in the order specified. Implementations shall support at least ten instances of this option
-	in a single c99 command invocation.
-*/
-
-/*
-Table 2.2. Include file search paths
-Compiler option	<include> search order	"include" search order
-
-Neither -I nor -J
-	RVCT31INCdirs                     	CP, RVCT31INCdirs
-
--I
-	RVCT31INCdirs, Idirs              	CP, Idirs, RVCT31INCdirs
-
--J
-	Jdirs                              	CP, and Jdirs
-
-Both -I and -J
-	Jdirs, Idirs                       	CP, Idirs, Jdirs
-
---sys_include
-	No effect                           Removes CP from the search path
-
---kandr_include
-	No effect                       	Uses Kernighan and Ritchie search rules
- */
-CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file, bool quote_include,
-	bool include_next, bool *in_sys_dir)
-{
-	size_t i, count;
-	CC_STRING path;
-	CC_STRING curdir;
-	struct stat st;
-
-	if( included_file.size() == 0 )
-		return CC_STRING("");
-	if( included_file[0] == '/' )
-		return included_file;
-	if(current_file.c_str() != NULL)
-		curdir = fsl_dirname(current_file.c_str());
-	else
-		curdir = ".";
-	count = 0;
-	path  = curdir;
-	path += '/';
-	path += included_file;
-	if(quote_include && stat(path.c_str(), &st) == 0 ) {
-		++count;
-		if( ! include_next ) {
-			if(in_sys_dir != NULL)
-				*in_sys_dir = find(tcc_sys_search_dirs, curdir);
-			return path;
-		}
-	}
-
-	CC_ARRAY<CC_STRING>& dirs = std_search_dirs[!!quote_include];
-	for(i = 0; i < dirs.size(); i++) {
-		path = dirs[i];
-		path += '/';
-		path += included_file;
-
-		if( stat(path.c_str(), &st) == 0 ) {
-			++count;
-			if( ! include_next || count == 2) {
-				if(in_sys_dir != NULL)
-					*in_sys_dir = find(tcc_sys_search_dirs, dirs[i]);
-				return path;
-			}
-		}
-	}
-	path.clear();
-	return path;
-}
-
-const void show_search_dirs()
+const void show_search_dirs(const CP_CONTEXT& yctx)
 {
 	size_t i;
 	FILE *dev = stderr;
 
 	fprintf(dev, "Search directories:\n");
-	for(i = 0; i < std_search_dirs[0].size(); i++)
-		fprintf(dev, " %s\n", std_search_dirs[0][i].c_str());
+	for(i = 0; i < yctx.search_dirs.size(); i++)
+		fprintf(dev, " %s\n", yctx.search_dirs[i].c_str());
 	fprintf(dev, "System search directories:\n");
-	for(i = 0; i < tcc_sys_search_dirs.size(); i++)
-		fprintf(dev, " %s\n", tcc_sys_search_dirs[i].c_str());
+	for(i = 0; i < yctx.compiler_search_dirs.size(); i++)
+		fprintf(dev, " %s\n", yctx.compiler_search_dirs[i].c_str());
 	fprintf(dev, "\n");
 }
 
@@ -254,7 +164,7 @@ static FILE *pyext_exec(const CC_STRING& host_cc, const CC_STRING entryf, const 
 	if(cc2.isnull())
 		fatal(127, "%s is not supported yet", host_cc.c_str());
 
-	cl  = "python3 -c 'import sys\nsys.path.append(\""
+	cl  = "python -c 'import sys\nsys.path.append(\""
 		+ my_dir
 		+ "/pyext\")\nimport "
 		+ cc2
@@ -334,23 +244,14 @@ int main(int argc, char *argv[])
 		unsetenv("LANGUAGE");
 		get_host_cc_predefined_macros(yctx.cc, yctx.predef_macros, yctx.cc_args);
 		if( ! yctx.nostdinc )
-			get_host_cc_search_dirs(yctx.cc, tcc_sys_search_dirs, yctx.cc_args);
+			get_host_cc_search_dirs(yctx.cc, yctx.compiler_search_dirs, yctx.cc_args);
 		else
-			tcc_sys_search_dirs = yctx.isystem_dirs ;
-		join(yctx.search_dirs_I, tcc_sys_search_dirs);
+			yctx.compiler_search_dirs = yctx.isystem_dirs ;
+		join(yctx.search_dirs, yctx.compiler_search_dirs);
 	}
-
-	// #include <file>
-	join(std_search_dirs[0], yctx.search_dirs_J);
-	join(std_search_dirs[0], yctx.search_dirs_I);
-
-	// #include "file"
-	join(std_search_dirs[1], yctx.search_dirs_I);
-	join(std_search_dirs[1], yctx.search_dirs_J);
 
 	tcc_init(tc);
 	Cycpp yc;
-
 
 	if( yctx.source_files.size() == 0 ) {
 		exit(0);

@@ -32,7 +32,8 @@ private:
 
 public:
 	CC_ARRAY<CC_STRING>  source_files;
-	CC_ARRAY<CC_STRING>  search_dirs_I, search_dirs_J;
+	CC_ARRAY<CC_STRING>  search_dirs;
+	CC_ARRAY<CC_STRING>  compiler_search_dirs;
 	CMemFile             predef_macros;
 	CC_STRING            outfile;
 	CC_STRING            depfile;
@@ -54,6 +55,9 @@ public:
 	int    get_options(int argc, char *argv[]);
 	void   save_cc_args();
 	void   save_my_args();
+
+	CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
+		bool quote_include, bool include_next, bool *in_sys_dir);
 };
 
 class CException {
@@ -75,6 +79,7 @@ class Cycpp {
 protected:
 	static const char *preprocessors[];
 	size_t       num_preprocessors;
+	CP_CONTEXT   *rtctx;
 
 	/*-------------------------------------------------------------*/
 	struct CONDITIONAL {
@@ -107,12 +112,11 @@ protected:
 
 	/*-------------------------------------------------------------*/
 	TCC_CONTEXT   *tc;
+
 	CC_STRING      depfile;
-
 	CC_STRING      baksuffix;
-	CC_STRING      dependencies;
+	CC_STRING      deptext;
 	CException     gex;
-
 
 	/* line-process based variables */
 	ssize_t comment_start;
@@ -120,19 +124,18 @@ protected:
 	CC_STRING    raw_line;
 	CC_STRING    new_line;
 
-
 	CC_STRING  do_elif(int mode);
 	void       do_define(const char *line);
 	bool       do_include(sym_t preprocess, const char *line, const char **output);
 
-	void   Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx);
+	void   Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx);
 	sym_t  GetPreprocessor(const char *line, const char **pos);
 	int    ReadLine();
 	bool   SM_Run();
 	void   AddDependency(const char *prefix, const CC_STRING& filename);
 	CFile* GetIncludedFile(sym_t preprocessor, const char *line, FILE** outf);
 
-	bool do_include_files(const CC_ARRAY<CC_STRING>& ifiles, size_t np);
+	bool GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np);
 	bool RunEngine(size_t n);
 
 	inline void mark_comment_start()

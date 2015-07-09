@@ -612,9 +612,9 @@ void Cycpp::AddDependency(const char *prefix, const CC_STRING& filename)
 	char *rp_name;
 	rp_name = GetRealPath(filename, NULL);
 	if( rp_name != NULL ) {
-		dependencies += prefix;
-		dependencies += rp_name;
-		dependencies += "\n";
+		deptext += prefix;
+		deptext += rp_name;
+		deptext += "\n";
 	}
 }
 
@@ -680,7 +680,7 @@ CFile *Cycpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 		gex.format("Invalid include preprocessor: %s", raw_line.c_str());
 		goto done;
 	}
-	ifpath = get_include_file_path(itoken, current_file()->name,
+	ifpath = rtctx->get_include_file_path(itoken, current_file()->name,
 		style == '"', preprocessor == SSID_SHARP_INCLUDE_NEXT, &in_sys_dir);
 	if(ifpath.isnull()) {
 		gex.format("Cannot find include file \"%s\"", itoken.c_str());
@@ -906,15 +906,16 @@ done:
 }
 
 
-void Cycpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
+void Cycpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx)
 {
 	this->num_preprocessors = num_preprocessors;
 	this->tc                = tc;
-	if(ctx != NULL) {
-		this->depfile       = ctx->depfile;
-	} else {
-		this->depfile.clear();
-	}
+	this->rtctx             = ctx;
+
+	if(ctx != NULL)
+		depfile = ctx->depfile;
+	else
+		depfile.clear();
 
 	current.if_value   = IV_TRUE;
 	current.elif_value = IV_UNKNOWN;
@@ -926,7 +927,7 @@ void Cycpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_C
 
 	raw_line.clear();
 	line.clear();
-	dependencies.clear();
+	deptext.clear();
 	comment_start = -1;
 	gex = "";
 	errmsg.clear();
@@ -1137,7 +1138,7 @@ handle_last_line:
 	return 1;
 }
 
-bool Cycpp::do_include_files(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
+bool Cycpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 {
 	if( ifiles.size() == 0)
 		return true;
@@ -1145,7 +1146,7 @@ bool Cycpp::do_include_files(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 	CC_STRING path;
 	bool in_sys_dir;
 	for(size_t i = 0; i < ifiles.size(); i++) {
-		path = get_include_file_path(ifiles[i], CC_STRING(""), true, false, &in_sys_dir);
+		path = rtctx->get_include_file_path(ifiles[i], CC_STRING(""), true, false, &in_sys_dir);
 		if( path.c_str() == NULL ) {
 			gex.format("Can not find include file \"%s\"", ifiles[i].c_str());
 			return false;
@@ -1240,7 +1241,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 			out_fp = stdout;
 		else {
 			int fd;
-			strcpy(tmp_outfile, "#pxcc-XXXXXX");
+			strcpy(tmp_outfile, "#yccp-XXXXXX");
 			fd = mkstemp(tmp_outfile);
 			if( fd < 0 ) {
 				log(DML_RUNTIME, "Cannot open \"%s\" for writing\n", ctx->outfile.c_str());
@@ -1253,7 +1254,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 
 	if( num_preprocessors >= COUNT_OF(Cycpp::preprocessors) )
 		num_preprocessors  = COUNT_OF(Cycpp::preprocessors);
-	Reset(tc, num_preprocessors, infile, ctx);
+	Reset(tc, num_preprocessors, ctx);
 
 	if(depfile.c_str() != NULL)
 		AddDependency("", infile->name);
@@ -1261,16 +1262,15 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 	include_level_push(infile, out_fp, COUNT_OF(Cycpp::preprocessors), conditionals.size());
 
 	if(ctx != NULL) {
-		do_include_files(ctx->imacro_files, 2);
-		do_include_files(ctx->include_files, COUNT_OF(preprocessors));
+		GetCmdLineIncludeFiles(ctx->imacro_files, 2);
+		GetCmdLineIncludeFiles(ctx->include_files, COUNT_OF(preprocessors));
 	}
 
 	if( ! RunEngine(0) )
 		goto error;
 
-	if(depfile.c_str() != NULL && dependencies.c_str() != NULL ) {
-		fsl_mp_append(depfile, dependencies.c_str(), dependencies.size());
-	}
+	if(depfile.c_str() != NULL && deptext.c_str() != NULL )
+		fsl_mp_append(depfile, deptext.c_str(), deptext.size());
 	if( conditionals.size() != 0 )
 		gex = "Unmatched #if";
 	else
