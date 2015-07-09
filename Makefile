@@ -1,4 +1,4 @@
-EXTRA_CFLAGS    := -ggdb -O3
+EXTRA_CFLAGS    := -ggdb ##-O3
 EXTRA_CFLAGS    += -Wall -Wno-unused-result #-Wno-format
 DEFINES         :=
 SRCS            := ./ ./osdep/

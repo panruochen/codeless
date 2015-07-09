@@ -304,25 +304,6 @@ static void get_host_cc_predefined_macros(const CC_STRING& host_cc, CMemFile& pr
 }
 
 
-static void do_include_files(Cycpp& yc, TCC_CONTEXT *tc, const CC_ARRAY<CC_STRING>& ifiles,
-	const char *preprocessors[], size_t np)
-{
-	if( ifiles.size() == 0)
-		return;
-
-	CRealFile file;
-	CC_STRING path;
-
-	for(size_t i = 0; i < ifiles.size(); i++) {
-		path = get_include_file_path(ifiles[i], CC_STRING(""), true);
-		if( path.isnull() )
-			continue;
-		file.SetFileName(path);
-		yc.DoFile(tc, preprocessors, np, &file, NULL);
-		file.Close();
-	}
-}
-
 
 int main(int argc, char *argv[])
 {
@@ -369,9 +350,7 @@ int main(int argc, char *argv[])
 
 	tcc_init(tc);
 	Cycpp yc;
-	static const char *preprocessors[] = {
-		"#define", "#undef", "#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif", "#include", "#include_next"
-	};
+
 
 	if( yctx.source_files.size() == 0 ) {
 		exit(0);
@@ -379,12 +358,9 @@ int main(int argc, char *argv[])
 
 	if(yctx.predef_macros.Size() > 0) {
 		yctx.predef_macros.SetFileName("<command line>");
-		if( ! yc.DoFile(tc, preprocessors, 2, &yctx.predef_macros, NULL) )
+		if( ! yc.DoFile(tc, 2, &yctx.predef_macros, NULL) )
 			fatal(121, "Error on parsing command line\n") ;
 	}
-
-	do_include_files(yc, tc, yctx.imacro_files, preprocessors, 2);
-	do_include_files(yc, tc, yctx.include_files, preprocessors, COUNT_OF(preprocessors));
 
 	CRealFile file;
 	for(i = 0; i < yctx.source_files.size(); i++) {
@@ -403,7 +379,7 @@ int main(int argc, char *argv[])
 		if( yctx.outfile.isnull() )
 			yctx.outfile  = (yctx.baksuffix.c_str() != NULL) ? current_file : "/dev/stdout";
 
-		if( ! yc.DoFile(tc, preprocessors, COUNT_OF(preprocessors), &file, &yctx))
+		if( ! yc.DoFile(tc, (size_t)-1, &file, &yctx))
 			fatal(120, "Error on preprocessing \"%s\"\n%s\n", current_file, yc.errmsg.c_str());
 		break;
 	}

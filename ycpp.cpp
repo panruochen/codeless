@@ -559,6 +559,12 @@ error:
 	return !gv_strict_mode ? IV_FALSE : IV_UNKNOWN;
 }
 
+const char *Cycpp::preprocessors[] = {
+	"#define", "#undef",
+	"#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif",
+	"#include", "#include_next"
+};
+
 CC_STRING Cycpp::do_elif(int mode)
 {
 	CC_STRING output;
@@ -746,7 +752,7 @@ bool Cycpp::do_include(sym_t preprocessor, const char *line, const char **output
 	if( file == NULL )
 		return false;
 	if(file->Open()) {
-		include_level_push(file, NULL, conditionals.size());
+		include_level_push(file, NULL, COUNT_OF(Cycpp::preprocessors), conditionals.size());
 	} else {
 		gex.format("Cannot open `%s'", file->name.c_str());
 		return false;
@@ -900,9 +906,8 @@ done:
 }
 
 
-void Cycpp::Reset(TCC_CONTEXT *tc, const char **preprocessors, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
+void Cycpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
 {
-	this->preprocessors     = preprocessors;
 	this->num_preprocessors = num_preprocessors;
 	this->tc                = tc;
 	if(ctx != NULL) {
@@ -1132,14 +1137,78 @@ handle_last_line:
 	return 1;
 }
 
+bool Cycpp::do_include_files(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
+{
+	if( ifiles.size() == 0)
+		return true;
+
+	CC_STRING path;
+	bool in_sys_dir;
+	for(size_t i = 0; i < ifiles.size(); i++) {
+		path = get_include_file_path(ifiles[i], CC_STRING(""), true, false, &in_sys_dir);
+		if( path.c_str() == NULL ) {
+			gex.format("Can not find include file \"%s\"", ifiles[i].c_str());
+			return false;
+		}
+		CRealFile *file;
+		file = new CRealFile;
+		file->SetFileName(path);
+
+		if( ! file->Open() ) {
+			gex.format("Can not open include file \"%s\"", ifiles[i].c_str());
+			return false;
+		}
+		include_level_push(file, NULL, np, conditionals.size());
+		if( ! RunEngine(1) )
+			return false;
+
+		if(depfile.c_str() != NULL && ! in_sys_dir)
+			AddDependency("  ",  path.c_str());
+	}
+	return true;
+}
+
+bool Cycpp::RunEngine(size_t cond)
+{
+	if(include_levels.size() == cond)
+		return true;
+
+	INCLUDE_LEVEL ilevel;
+	while( 1 ) {
+		int rc ;
+		rc = ReadLine();
+		if( rc > 0 ) {
+			if( ! SM_Run() )
+				return false;
+		} else if (rc == 0) {
+			ilevel = include_level_pop();
+			/****
+			if(lvl.if_level != conditionals.size()) {
+				gex.format("Levels mismatched on %s, %zu %zu\n", lvl.srcfile->name.c_str(), lvl.if_level, conditionals.size());
+				goto error;
+			}
+			****/
+///			if(infile != ilevel.srcfile )
+			if(include_levels.size() > 0)
+				delete ilevel.srcfile;
+			if(include_levels.size() == cond)
+				break;
+			num_preprocessors = ilevel.np;
+		} else
+			return false;
+		raw_line.clear();
+		line.clear();
+		new_line.clear();
+	}
+	return true;
+}
 
 /*  Parse the input file and update the global symbol table and macro table,
  *  output the stripped file contents to devices if OUTFILE is not nil.
  *
  *  Returns a pointer to the error messages on failure, or nil on success.
  */
-bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_preprocessors, CFile *infile,
-	CP_CONTEXT *ctx)
+bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
 {
 	FILE *out_fp;
 	bool retval = false;
@@ -1182,52 +1251,23 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, const char **preprocessors, size_t num_prepr
 		}
 	}
 
-	Reset(tc, preprocessors, num_preprocessors, infile, ctx);
+	if( num_preprocessors >= COUNT_OF(Cycpp::preprocessors) )
+		num_preprocessors  = COUNT_OF(Cycpp::preprocessors);
+	Reset(tc, num_preprocessors, infile, ctx);
 
-	if(depfile.c_str() != NULL) {
-		size_t j;
-		CC_STRING ipath;
-		bool in_sys_dir;
-
+	if(depfile.c_str() != NULL)
 		AddDependency("", infile->name);
-		for(j = 0; j < ctx->imacro_files.size(); j++) {
-			ipath = get_include_file_path(ctx->imacro_files[j], current_file()->name, true, false, &in_sys_dir);
-			if(!in_sys_dir)
-				AddDependency("  ", ipath);
-		}
-		for(j = 0; j < ctx->include_files.size(); j++) {
-			ipath = get_include_file_path(ctx->include_files[j], current_file()->name, true, false, &in_sys_dir);
-			if(!in_sys_dir)
-				AddDependency("  ", ipath);
-		}
+
+	include_level_push(infile, out_fp, COUNT_OF(Cycpp::preprocessors), conditionals.size());
+
+	if(ctx != NULL) {
+		do_include_files(ctx->imacro_files, 2);
+		do_include_files(ctx->include_files, COUNT_OF(preprocessors));
 	}
 
-	include_level_push(infile, out_fp, conditionals.size());
-	INCLUDE_LEVEL ilevel;
-	while( 1 ) {
-		int rc ;
-		rc = ReadLine();
-		if( rc > 0 ) {
-			if( ! SM_Run() )
-				goto error;
-		} else if (rc == 0) {
-			ilevel = include_level_pop();
-			/****
-			if(lvl.if_level != conditionals.size()) {
-				gex.format("Levels mismatched on %s, %zu %zu\n", lvl.srcfile->name.c_str(), lvl.if_level, conditionals.size());
-				goto error;
-			}
-			****/
-			if(infile != ilevel.srcfile )
-				delete ilevel.srcfile;
-			if(include_levels.size() == 0)
-				break;
-		} else
-			goto error;
-		raw_line.clear();
-		line.clear();
-		new_line.clear();
-	}
+	if( ! RunEngine(0) )
+		goto error;
+
 	if(depfile.c_str() != NULL && dependencies.c_str() != NULL ) {
 		fsl_mp_append(depfile, dependencies.c_str(), dependencies.size());
 	}
@@ -1242,6 +1282,7 @@ error:
 			errmsg.format("%s:%u:  %s\n%s\n", current_file()->name.c_str(), current_file()->line, raw_line.c_str(), gex.GetError());
 		else
 			errmsg = gex.GetError();
+		INCLUDE_LEVEL ilevel;
 		while(include_levels.size() > 0) {
 			ilevel = include_level_pop();
 			if(infile != ilevel.srcfile)
