@@ -1211,12 +1211,31 @@ bool Cycpp::RunEngine(size_t cond)
  */
 bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
 {
+	bool bypass;
 	FILE *out_fp;
 	bool retval = false;
 	char tmp_outfile[64] = { 0 };
 	CC_STRING bakfile;
 	struct stat    stb;
 	struct utimbuf utb;
+
+	if(ctx) {
+		bypass = ctx->check_if_bypass(infile->name);
+		if( bypass && ! ctx->depfile.c_str() )
+			return true;
+	} else
+		bypass = false;
+
+	/**
+	if(ctx)
+		fprintf(stdout, "** %s\n", infile->name.c_str());
+	if( strstr(infile->name.c_str(), "boot-common.c") ) {
+		fprintf(stderr, "bypass_list has %u elements\n", ctx->bypass_list.size());
+		fprintf(stderr, "cmp '%s' against '%s'\n", infile->name.c_str(), ctx->bypass_list[0].c_str());
+		fprintf(stderr, "bypass %u\n", bypass);
+		exit(2);
+	}
+	**/
 
 	if( stat(infile->name, &stb) == 0 ) {
 		utb.actime  = stb.st_atime;
@@ -1235,7 +1254,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 			bakfile   = infile->name + ctx->baksuffix;
 			baksuffix = ctx->baksuffix;
 		}
-		if( ctx->outfile.isnull() )
+		if( ctx->outfile.isnull() || bypass )
 			out_fp = NULL;
 		else if( IS_STDOUT(ctx->outfile) )
 			out_fp = stdout;
@@ -1293,7 +1312,7 @@ error:
 	if(out_fp != NULL && out_fp != stdout)
 		fclose(out_fp);
 
-	 if( retval && ctx != NULL ) {
+	if( retval && ctx != NULL && ! bypass ) {
 		CC_STRING semname;
 		sem_t *sem;
 

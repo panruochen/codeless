@@ -253,9 +253,8 @@ int main(int argc, char *argv[])
 	tcc_init(tc);
 	Cycpp yc;
 
-	if( yctx.source_files.size() == 0 ) {
+	if( yctx.source_files.size() == 0 )
 		exit(0);
-	}
 
 	if(yctx.predef_macros.Size() > 0) {
 		yctx.predef_macros.SetFileName("<command line>");
@@ -273,8 +272,8 @@ int main(int argc, char *argv[])
 				yctx.depfile = MakeDepFileName(current_file);
 			else
 				yctx.depfile = yctx.save_dep_file;
-
 		}
+
 
 		file.SetFileName(current_file);
 		if( yctx.outfile.isnull() )

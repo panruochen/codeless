@@ -48,6 +48,7 @@ public:
 	CC_ARRAY<CC_STRING>  imacro_files;
 	CC_ARRAY<CC_STRING>  isystem_dirs;
 	CC_ARRAY<CC_STRING>  include_files;
+	CC_ARRAY<CC_STRING>  bypass_list;
 
 	int                  argc;
 	char               **argv;
@@ -56,6 +57,7 @@ public:
 	void   save_cc_args();
 	void   save_my_args();
 
+	bool check_if_bypass(const CC_STRING& filename);
 	CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
 		bool quote_include, bool include_next, bool *in_sys_dir);
 };

@@ -16,6 +16,7 @@ YZ_PXCC             = None
 YZ_DEP_FILE         = None
 YZ_CL_FILE          = None
 YZ_SHELL            = None
+YZ_BYPASS           = ""
 
 def do_execp(cmd, errors='abort') :
     sp = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -45,15 +46,16 @@ def to_abs_path(x) :
 
 short_options = ''
 long_options = (["yz-cc=", "yz-xcc=", "yz-print-dependency=", 'yz-print-command-line=',
-    'yz-shell='])
+    'yz-shell=', 'yz-bypass='])
 
 a, make_args = yzu.collect_options(short_options, long_options, sys.argv[1:])
-
-#print a
-#print '--------------------------------'
-#print make_args
-#print '--------------------------------'
-#exit(0)
+'''
+print a
+print '--------------------------------'
+print make_args
+print '--------------------------------'
+exit(0)
+'''
 try:
     opts, args = getopt.gnu_getopt(a, short_options, long_options)
 except getopt.GetoptError as err:
@@ -71,6 +73,8 @@ for o, a in opts:
         YZ_CL_FILE = to_abs_path(a)
     elif o == '--yz-shell' :
         YZ_SHELL = a
+    elif o == '--yz-bypass' :
+        YZ_BYPASS += ' --yz-bypass=' + a
 
 if YZ_PXCC == None:
     YZ_PXCC = to_abs_path(os.path.dirname(sys.argv[0]) + "/ycpp.exe")
@@ -81,10 +85,12 @@ if YZ_CC_PATH == '':
     exit(2)
 
 my_args = ' --yz-cc=' + YZ_CC + ' --yz-debug=0 --yz-in-place=.bak'
-if YZ_DEP_FILE != None :
+if YZ_DEP_FILE is not None :
     my_args += ' --yz-print-dependency=' + YZ_DEP_FILE
-if YZ_CL_FILE != None :
+if YZ_CL_FILE is not None :
     my_args += ' --yz-print-command-line=' + YZ_CL_FILE
+if YZ_BYPASS :
+    my_args += YZ_BYPASS
 
 final_commands  = 'function ' + YZ_CC + '()\n{\n    '
 final_commands += YZ_PXCC + my_args
@@ -117,35 +123,6 @@ print final_commands
 sp = subprocess.Popen(final_commands, shell=True, executable='/bin/bash')
 sp.wait()
 if sp.returncode :
-    raise Exception("yMake got error %d" % sp.returncode)
+    print >>sys.stderr, "yMake got error %d" % sp.returncode
 
-
-# ARMCC 3.1 Predefined Macros
-'''
-#define __STDC__ 1
-#define __STDC_VERSION__ 199409L
-#define __EDG__ 1
-#define __EDG_VERSION__ 310
-#define __sizeof_int 4
-#define __sizeof_long 4
-#define __sizeof_ptr 4
-#define __ARMCC_VERSION 410894
-#define __TARGET_CPU_ARM7TDMI 1
-#define __TARGET_FPU_SOFTVFP 1
-#define __CC_ARM 1
-#define __arm 1
-#define __arm__ 1
-#define __TARGET_ARCH_4T 1
-#define __TARGET_ARCH_ARM 4
-#define __TARGET_ARCH_THUMB 1
-#define __TARGET_FEATURE_HALFWORD 1
-#define __TARGET_FEATURE_THUMB 1
-#define __TARGET_FEATURE_MULTIPLY 1
-#define __TARGET_FEATURE_EXTENSION_REGISTER_COUNT 0
-#define __OPTIMISE_SPACE 1
-#define __OPT_SMALL_ASSERT 1
-#define __OPTIMISE_LEVEL 2
-#define __SOFTFP__ 1
-'''
-
-
+exit(sp.returncode)

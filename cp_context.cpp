@@ -119,6 +119,7 @@ enum {
 	C_OPTION_CC,
 	C_OPTION_CC_PATH,
 	C_OPTION_STRICT_MODE,
+	C_OPTION_BYPASS,
 	C_OPTION_DEBUG
 };
 
@@ -213,6 +214,11 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 			save_my_args();
 			break;
 
+		case C_OPTION_BYPASS :
+			bypass_list.push_back(optarg);
+			save_my_args();
+			break;
+
 		case C_OPTION_DEBUG:
 			do {
 				int level;
@@ -273,6 +279,7 @@ int CP_CONTEXT::get_options(int argc, char *argv[])
 		{"yz-cc",                 1, 0, C_OPTION_CC },
 		{"yz-cc-path",            1, 0, C_OPTION_CC_PATH },
 		{"yz-strict-mode",        1, 0, C_OPTION_STRICT_MODE },
+		{"yz-bypass",             1, 0, C_OPTION_BYPASS },
 		{"yz-debug",              1, 0, C_OPTION_DEBUG },
 		{"include",  1, 0, C_OPTION_INCLUDE},
 		{"imacros",  1, 0, C_OPTION_IMACROS},
@@ -306,6 +313,19 @@ void CP_CONTEXT::save_my_args()
 		my_args += ' ';
 		my_args += DoQuotes(argv[i]);
 	}
+}
+
+bool CP_CONTEXT::check_if_bypass(const CC_STRING& filename)
+{
+	if( bypass_list.size() == 0 || filename.c_str() == NULL)
+		return false;
+	for(size_t i = 0; i < bypass_list.size(); i++) {
+		const CC_STRING& p = bypass_list[i];
+		if( p.size() < filename.size() &&
+			strcmp(filename.c_str() + filename.size() - p.size(), p.c_str()) == 0 )
+			return true;
+	}
+	return false;
 }
 
 /*

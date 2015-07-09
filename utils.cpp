@@ -26,7 +26,7 @@ bool find(const CC_ARRAY<CC_STRING>& haystack, const CC_STRING& needle)
 void join(CC_ARRAY<CC_STRING>& x, const CC_ARRAY<CC_STRING>& y)
 {
 	size_t i;
-	for(i = 0; i < y.size(); i++) 
+	for(i = 0; i < y.size(); i++)
 		x.push_back(y[i]);
 }
 
@@ -35,7 +35,7 @@ void ujoin(CC_ARRAY<CC_STRING>& uarray, const char *elem)
 {
 	size_t i;
 	for(i = 0; i < uarray.size(); i++) {
-		if( uarray[i] == elem )
+		if( strcmp(uarray[i].c_str(), elem) == 0 )
 			return;
 	}
 	uarray.push_back(elem);
@@ -69,7 +69,7 @@ void fatal(int exit_status, const char *format, ...)
     vfprintf(stderr, format, ap);
 	fputc('\n', stderr);
     va_end(ap);
-	exit(exit_status); 
+	exit(exit_status);
 }
 
 
