@@ -14,6 +14,7 @@
 
 #include "ycpp.h"
 #include "utils.h"
+#include "stdpath.h"
 
 enum IF_VALUE {
 	IV_FALSE   = 0,
@@ -97,7 +98,10 @@ static char *GetRealPath(const CC_STRING& name, char *buf)
 {
 	static char rp_buf[PATH_MAX];
 	char *p = buf ? buf : rp_buf;
-	if( realpath(name.c_str(), p) == NULL )
+/*  Use my own function rather than realpath since realpath will expand symblic links */
+//	if( realpath(name.c_str(), p) == NULL )
+//		return NULL;
+	if( regular_pathname_get(p, PATH_MAX, name.c_str()) == NULL )
 		return NULL;
 	return p;
 }

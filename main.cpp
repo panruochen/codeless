@@ -281,6 +281,8 @@ int main(int argc, char *argv[])
 			fatal(120, "Error on preprocessing \"%s\"\n%s\n", current_file, yc.errmsg.c_str());
 		break;
 	}
+
+//	show_search_dirs(yctx); exit(2);
 	return 0;
 }
 
