@@ -1,5 +1,13 @@
 #!/usr/bin/python
 
+'''
+Usage:
+	y-copy -s FILE1 -s FILE2 ... -s FILEn -C SRC_DIR -t TAGET_DIR LIST_FILE
+	y-copy -S FILE -C SRC_DIR -t TAGET_DIR LIST_FILE
+
+Copy specified source files from source dir to target dir with directory hierarchy kept.
+'''
+
 import sys, os, glob, stat
 import shutil
 import ConfigParser, optparse
@@ -33,11 +41,10 @@ def find_dependencies(sources, depfile) :
 optionsparser = optparse.OptionParser()
 
 # define the options we require/support
-optionsparser.add_option("-s", "--source", action='append', help="Specify the source file name to search", default=[])
+optionsparser.add_option("-s", "--source", action='append', help="Specify a source file name", default=[])
 optionsparser.add_option("-S", "--from-file", action='store', help="Get source file name from file", dest='from_file', default=None)
-optionsparser.add_option("-C", "--change-dir", action='store', help="Specify the common path prefix", dest='cwd', default=None)
+optionsparser.add_option("-C", "--change-dir", action='store', help="Change to the specified directory which is the top of the source tree", dest='cwd', default=None)
 optionsparser.add_option("-t", "--target", action='store', help="Specify the target directory", default=None)
-
 
 # parse the options
 (options, args) = optionsparser.parse_args()
