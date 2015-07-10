@@ -1,0 +1,97 @@
+#!/usr/bin/python
+
+import sys, os, glob, stat
+import shutil
+import ConfigParser, optparse
+import subprocess
+
+def find_dependencies(sources, depfile) :
+    fd = open(depfile, "r")
+    if not fd :
+        print >>sys.stderr, "Cannot open %s to analyze" % depfile
+
+    deps = dict()
+    curfile = None
+    for line in fd :
+        if len(line) == 0 :
+            continue
+        line = line.rstrip('\r\n')
+
+        if line[0] == ' ' :
+            if curfile is not None :
+                a = line.split()
+                deps[curfile].append(a[0])
+        else :
+            curfile = None
+            for x in sources :
+                if line.endswith(x) :
+                    curfile = line
+                    deps[curfile] = []
+    return deps
+
+# create the options parser
+optionsparser = optparse.OptionParser()
+
+# define the options we require/support
+optionsparser.add_option("-s", "--source", action='append', help="Specify the source file name to search", default=[])
+optionsparser.add_option("-S", "--from-file", action='store', help="Get source file name from file", dest='from_file', default=None)
+optionsparser.add_option("-C", "--change-dir", action='store', help="Specify the common path prefix", dest='cwd', default=None)
+optionsparser.add_option("-t", "--target", action='store', help="Specify the target directory", default=None)
+
+
+# parse the options
+(options, args) = optionsparser.parse_args()
+
+if options.cwd and not os.path.isdir(options.cwd) :
+    print >>sys.stderr, "No such directory: ", options.cwd
+    exit(2)
+
+sources = options.source
+if options.from_file is not None :
+    fd = open(options.from_file, "r")
+    if fd is not None :
+        for line in fd :
+            sources.append(line.rstrip('\r\n'))
+
+os.chdir(options.cwd)
+prefix = os.getcwd()
+
+set1 = set([])
+for file in args :
+    deps = find_dependencies(sources, file)
+    for s in deps :
+        set1.add(s)
+        for d in deps[s] :
+            set1.add(d)
+
+cl_list = []
+drop_list = []
+count = 0
+cmdline = 'cp -f --parent'
+prefix += '/'
+for file in set1 :
+    if file.find(prefix) == 0 :
+        count += 1
+        cmdline += " " + file[len(prefix):]
+        if count == 50 :
+            cmdline +=  " " + options.target
+            cl_list.append(cmdline)
+            count = 0
+            cmdline = 'cp -f --parent'
+    else :
+        drop_list.append(file)
+
+if count > 0 :
+    cmdline +=  " " + options.target
+    cl_list.append(cmdline)
+for cmdline in cl_list :
+#    print cmdline
+    rc = subprocess.call(cmdline, shell=True)
+    if rc != 0 :
+        exit(2)
+
+if len(drop_list) > 0 :
+    print >>sys.stderr, "\nFollowing files are not processed:"
+for file in drop_list :
+    print >>sys.stderr, file
+
