@@ -33,8 +33,9 @@ def find_dependencies(sources, depfile) :
 optionsparser = optparse.OptionParser()
 
 # define the options we require/support
-optionsparser.add_option("-s", "--source", action='append', help="specify the source file name to search", default=[])
-optionsparser.add_option("-f", "--format", action='store', help="specify the output format", default='all')
+optionsparser.add_option("-s", "--source", action='append', help="Specify the source file name to search", default=[])
+optionsparser.add_option("-S", "--from-file", action='store', help="Get source file name from file", dest='from_file', default=None)
+optionsparser.add_option("-f", "--format", action='store', help="Specify the output format", default='all')
 
 # parse the options
 (options, args) = optionsparser.parse_args()
@@ -45,6 +46,12 @@ if not options.format in { 'all' : 1, 'only-dep' : 2} :
 
 sources = options.source
 #exit(0)
+
+if options.from_file is not None :
+    fd = open(options.from_file, "r")
+    if fd is not None :
+        for line in fd :
+            sources.append(line.rstrip('\r\n'))
 
 set1 = set()
 for file in args :
