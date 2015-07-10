@@ -736,7 +736,7 @@ CFile *Cycpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 	retval = file;
 	*outf = NULL;
 
-	if(depfile.c_str() != NULL && ! in_sys_dir)
+	if(has_dep_file() && ! in_sys_dir)
 		AddDependency("  ", ifpath.c_str());
 done:
 	return retval;
@@ -911,11 +911,6 @@ void Cycpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx)
 	this->num_preprocessors = num_preprocessors;
 	this->tc                = tc;
 	this->rtctx             = ctx;
-
-	if(ctx != NULL)
-		depfile = ctx->depfile;
-	else
-		depfile.clear();
 
 	current.if_value   = IV_TRUE;
 	current.elif_value = IV_UNKNOWN;
@@ -1138,6 +1133,16 @@ handle_last_line:
 	return 1;
 }
 
+bool Cycpp::check_file_processed(const CC_STRING& filename)
+{
+	CC_STRING bakfile;
+
+	bakfile = filename + baksuffix;
+	if( ! fsl_exist(bakfile) )
+		return false;
+	return true;
+}
+
 bool Cycpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 {
 	if( ifiles.size() == 0)
@@ -1163,7 +1168,7 @@ bool Cycpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 		if( ! RunEngine(1) )
 			return false;
 
-		if(depfile.c_str() != NULL && ! in_sys_dir)
+		if(has_dep_file() && ! in_sys_dir)
 			AddDependency("  ",  path.c_str());
 	}
 	return true;
@@ -1219,9 +1224,14 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 	struct stat    stb;
 	struct utimbuf utb;
 
+	if( check_file_processed(infile->name) ) {
+		CC_STRING tmp = CC_STRING("  --yz-bypass=\"") + infile->name + "\"\n";
+		fsl_mp_append(ctx->save_byfile, tmp.c_str(), tmp.size());
+	}
+
 	if(ctx) {
 		bypass = ctx->check_if_bypass(infile->name);
-		if( bypass && ! ctx->depfile.c_str() )
+		if( bypass && ! has_dep_file() )
 			return true;
 	} else
 		bypass = false;
@@ -1275,7 +1285,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 		num_preprocessors  = COUNT_OF(Cycpp::preprocessors);
 	Reset(tc, num_preprocessors, ctx);
 
-	if(depfile.c_str() != NULL)
+	if(has_dep_file())
 		AddDependency("", infile->name);
 
 	include_level_push(infile, out_fp, COUNT_OF(Cycpp::preprocessors), conditionals.size());
@@ -1288,8 +1298,8 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 	if( ! RunEngine(0) )
 		goto error;
 
-	if(depfile.c_str() != NULL && deptext.c_str() != NULL )
-		fsl_mp_append(depfile, deptext.c_str(), deptext.size());
+	if(has_dep_file() && deptext.c_str() != NULL )
+		fsl_mp_append(ctx->save_depfile, deptext.c_str(), deptext.size());
 	if( conditionals.size() != 0 )
 		gex = "Unmatched #if";
 	else

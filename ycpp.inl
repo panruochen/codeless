@@ -1,6 +1,8 @@
 #ifndef __PXCC_INL
 #define __PXCC_INL
 
+
+
 inline CException::CException(void)
 {
 }
@@ -61,5 +63,9 @@ inline Cycpp::INCLUDE_LEVEL Cycpp::include_level_pop()
 	return lvl;
 }
 
+inline bool Cycpp::has_dep_file(void)
+{
+	return rtctx && rtctx->save_depfile.size() != 0;
+}
 #endif
 

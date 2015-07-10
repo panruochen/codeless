@@ -36,8 +36,9 @@ public:
 	CC_ARRAY<CC_STRING>  compiler_search_dirs;
 	CMemFile             predef_macros;
 	CC_STRING            outfile;
-	CC_STRING            depfile;
-	CC_STRING            clfile;
+	CC_STRING            save_depfile; /* saved dependency file */
+	CC_STRING            save_clfile;  /* saved command-line file*/
+	CC_STRING            save_byfile;  /* saved bypass file */
 	CC_STRING            baksuffix;
 	CC_STRING            cc;
 	CC_STRING            cc_path;
@@ -115,7 +116,6 @@ protected:
 	/*-------------------------------------------------------------*/
 	TCC_CONTEXT   *tc;
 
-	CC_STRING      depfile;
 	CC_STRING      baksuffix;
 	CC_STRING      deptext;
 	CException     gex;
@@ -139,6 +139,9 @@ protected:
 
 	bool GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np);
 	bool RunEngine(size_t n);
+
+	inline bool has_dep_file();
+	bool check_file_processed(const CC_STRING& filename);
 
 	inline void mark_comment_start()
 	{ comment_start = raw_line.size() - 2; }

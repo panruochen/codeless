@@ -8,13 +8,12 @@ import re, os, sys, getopt, subprocess
 sys.path.append(os.path.dirname(sys.argv[0]) + '/' + YZ_EXTDIR)
 import yzu
 
-# The Host Compiler
 YZ_CC               = None
-# The PXCC Tool
 YZ_PXCC             = None
 
 YZ_DEP_FILE         = None
 YZ_CL_FILE          = None
+YZ_BY_FILE          = None
 YZ_SHELL            = None
 YZ_BYPASS           = ""
 
@@ -45,10 +44,11 @@ def to_abs_path(x) :
 #================================================
 
 short_options = ''
-long_options = (["yz-cc=", "yz-xcc=", "yz-print-dependency=", 'yz-print-command-line=',
-    'yz-shell=', 'yz-bypass='])
+long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', "yz-save-dependency=", 'yz-save-cl=', 'yz-save-command-line=',
+    'yz-shell=', 'yz-bypass=', "yz-save-bypass="])
 
 a, make_args = yzu.collect_options(short_options, long_options, sys.argv[1:])
+
 '''
 print a
 print '--------------------------------'
@@ -56,6 +56,7 @@ print make_args
 print '--------------------------------'
 exit(0)
 '''
+
 try:
     opts, args = getopt.gnu_getopt(a, short_options, long_options)
 except getopt.GetoptError as err:
@@ -63,17 +64,20 @@ except getopt.GetoptError as err:
     exit(2)
 
 for o, a in opts:
-    if o == '--yz-cc':
+    o = o[len('--yz-'):]
+    if o == 'cc':
         YZ_CC = a
-    elif o == '--yz-xcc':
+    elif o == 'xcc':
         YZ_PXCC = to_abs_path(a)
-    elif o == '--yz-print-dependency' :
+    elif o.find('save-dep') == 0 :
         YZ_DEP_FILE = to_abs_path(a)
-    elif o == '--yz-print-command-line' :
+    elif o == 'save-cl' or o == 'save-command-line' :
         YZ_CL_FILE = to_abs_path(a)
-    elif o == '--yz-shell' :
+    elif o == 'save-bypass' :
+        YZ_BY_FILE = to_abs_path(a)
+    elif o == 'shell' :
         YZ_SHELL = a
-    elif o == '--yz-bypass' :
+    elif o == 'bypass' :
         YZ_BYPASS += ' --yz-bypass=' + a
 
 if YZ_PXCC == None:
@@ -86,9 +90,14 @@ if YZ_CC_PATH == '':
 
 my_args = ' --yz-cc=' + YZ_CC + ' --yz-debug=0 --yz-in-place=.bak'
 if YZ_DEP_FILE is not None :
-    my_args += ' --yz-print-dependency=' + YZ_DEP_FILE
+    my_args += ' --yz-save-dependency=' + YZ_DEP_FILE
+    open(YZ_DEP_FILE, "w").close()
 if YZ_CL_FILE is not None :
-    my_args += ' --yz-print-command-line=' + YZ_CL_FILE
+    my_args += ' --yz-save-command-line=' + YZ_CL_FILE
+    open(YZ_CL_FILE, "w").close()
+if YZ_BY_FILE is not None :
+    my_args += ' --yz-save-bypass=' + YZ_BY_FILE
+    open(YZ_BY_FILE, "w").close()
 if YZ_BYPASS :
     my_args += YZ_BYPASS
 

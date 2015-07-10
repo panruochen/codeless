@@ -226,8 +226,8 @@ int main(int argc, char *argv[])
 	if( yctx.get_options(argc, argv) != 0 )
 		fatal(128, "Invalid options\n");
 
-	if(yctx.clfile.c_str() != NULL)
-		save_command_line(yctx.clfile.c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
+	if(yctx.save_clfile.c_str() != NULL)
+		save_command_line(yctx.save_clfile.c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
 
 	if( !gv_strict_mode ) {
 		if(yctx.cc.isnull())
@@ -268,10 +268,8 @@ int main(int argc, char *argv[])
 		CC_STRING s;
 
 		if( yctx.save_dep_file.c_str() != NULL ) {
-			if( yctx.save_dep_file[0] == '\0' )
-				yctx.depfile = MakeDepFileName(current_file);
-			else
-				yctx.depfile = yctx.save_dep_file;
+			if( yctx.save_depfile[0] == '\x1' )
+				yctx.save_depfile = MakeDepFileName(current_file);
 		}
 
 

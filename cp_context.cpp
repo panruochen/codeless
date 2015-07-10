@@ -113,8 +113,9 @@ enum {
 	C_OPTION_NOSTDINC,
 	C_OPTION_SOURCE,
 
-	C_OPTION_PRINT_COMMAND_LINE,
-	C_OPTION_PRINT_DEPENDENCY,
+	C_OPTION_SAVE_COMMAND_LINE,
+	C_OPTION_SAVE_BYPASS,
+	C_OPTION_SAVE_DEPENDENCY,
 	C_OPTION_IN_PLACE,
 	C_OPTION_CC,
 	C_OPTION_CC_PATH,
@@ -182,15 +183,19 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 		case C_OPTION_SOURCE:
 			source_files.push_back(optarg);
 			break;
-		case C_OPTION_PRINT_COMMAND_LINE:
-			clfile = optarg;
+		case C_OPTION_SAVE_COMMAND_LINE:
+			save_clfile = optarg;
 			save_my_args();
 			break;
-		case C_OPTION_PRINT_DEPENDENCY:
+		case C_OPTION_SAVE_BYPASS:
+			save_byfile = optarg;
+			save_my_args();
+			break;
+		case C_OPTION_SAVE_DEPENDENCY:
 			if(optarg != NULL)
-				save_dep_file = optarg;
+				save_depfile = optarg;
 			else
-				save_dep_file = '\0';
+				save_depfile = '\x1';
 			save_my_args();
 			break;
 		case C_OPTION_IN_PLACE:
@@ -273,8 +278,9 @@ void __NO_USE__ dump_args(int argc, char *argv[]);
 int CP_CONTEXT::get_options(int argc, char *argv[])
 {
 	static const struct option long_options[] = {
-		{"yz-print-command-line", 1, 0, C_OPTION_PRINT_COMMAND_LINE },
-		{"yz-print-dependency",   2, 0, C_OPTION_PRINT_DEPENDENCY },
+		{"yz-save-command-line",  1, 0, C_OPTION_SAVE_COMMAND_LINE },
+		{"yz-save-bypass",        1, 0, C_OPTION_SAVE_BYPASS },
+		{"yz-save-dependency",    2, 0, C_OPTION_SAVE_DEPENDENCY },
 		{"yz-in-place",           2, 0, C_OPTION_IN_PLACE },
 		{"yz-cc",                 1, 0, C_OPTION_CC },
 		{"yz-cc-path",            1, 0, C_OPTION_CC_PATH },
