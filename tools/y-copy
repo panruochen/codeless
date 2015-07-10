@@ -74,7 +74,7 @@ for file in args :
 cl_list = []
 drop_list = []
 count = 0
-cmdline = 'cp -f --parent'
+cmdline = 'cp -Lf --parents'
 prefix += '/'
 for file in set1 :
     if file.find(prefix) == 0 :
@@ -84,7 +84,7 @@ for file in set1 :
             cmdline +=  " " + options.target
             cl_list.append(cmdline)
             count = 0
-            cmdline = 'cp -f --parent'
+            cmdline = 'cp -Lf --parents'
     else :
         drop_list.append(file)
 
