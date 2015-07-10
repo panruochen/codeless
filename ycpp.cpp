@@ -1152,7 +1152,7 @@ bool Cycpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 	bool in_sys_dir;
 	for(size_t i = 0; i < ifiles.size(); i++) {
 		path = rtctx->get_include_file_path(ifiles[i], CC_STRING(""), true, false, &in_sys_dir);
-		if( path.c_str() == NULL ) {
+		if( path.isnull() ) {
 			gex.format("Can not find include file \"%s\"", ifiles[i].c_str());
 			return false;
 		}
@@ -1224,8 +1224,8 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 	struct stat    stb;
 	struct utimbuf utb;
 
-	if( check_file_processed(infile->name) ) {
-		CC_STRING tmp = CC_STRING("  --yz-bypass=\"") + infile->name + "\"\n";
+	if( check_file_processed(infile->name) && ! ctx->save_byfile.isnull() ) {
+		CC_STRING tmp = infile->name + '\n';
 		fsl_mp_append(ctx->save_byfile, tmp.c_str(), tmp.size());
 	}
 
@@ -1260,7 +1260,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 	baksuffix.clear();
 
 	if(ctx != NULL ) {
-		if( ctx->baksuffix.c_str() != NULL && ctx->baksuffix[0] != '\0' ) {
+		if( ! ctx->baksuffix.isnull() && ctx->baksuffix[0] != '\0' ) {
 			bakfile   = infile->name + ctx->baksuffix;
 			baksuffix = ctx->baksuffix;
 		}
@@ -1298,7 +1298,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 	if( ! RunEngine(0) )
 		goto error;
 
-	if(has_dep_file() && deptext.c_str() != NULL )
+	if(has_dep_file() && ! deptext.isnull() )
 		fsl_mp_append(ctx->save_depfile, deptext.c_str(), deptext.size());
 	if( conditionals.size() != 0 )
 		gex = "Unmatched #if";
@@ -1330,7 +1330,7 @@ error:
 		sem = sem_open(semname.c_str(), O_CREAT, 0666, 1);
 		sem_wait(sem);
 
-		if( bakfile.c_str() != NULL )
+		if( ! bakfile.isnull() )
 			rename(infile->name, bakfile);
 		rename(tmp_outfile, ctx->outfile);
 		utime(ctx->outfile.c_str(), &utb);

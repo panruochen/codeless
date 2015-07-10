@@ -226,7 +226,7 @@ int main(int argc, char *argv[])
 	if( yctx.get_options(argc, argv) != 0 )
 		fatal(128, "Invalid options\n");
 
-	if(yctx.save_clfile.c_str() != NULL)
+	if(!yctx.save_clfile.isnull())
 		save_command_line(yctx.save_clfile.c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
 
 	if( !gv_strict_mode ) {
@@ -267,7 +267,7 @@ int main(int argc, char *argv[])
 		const char *current_file = yctx.source_files[i].c_str();
 		CC_STRING s;
 
-		if( yctx.save_dep_file.c_str() != NULL ) {
+		if( ! yctx.save_dep_file.isnull() ) {
 			if( yctx.save_depfile[0] == '\x1' )
 				yctx.save_depfile = MakeDepFileName(current_file);
 		}
@@ -275,7 +275,7 @@ int main(int argc, char *argv[])
 
 		file.SetFileName(current_file);
 		if( yctx.outfile.isnull() )
-			yctx.outfile  = (yctx.baksuffix.c_str() != NULL) ? current_file : "/dev/stdout";
+			yctx.outfile  = (!yctx.baksuffix.isnull()) ? current_file : "/dev/stdout";
 
 		if( ! yc.DoFile(tc, (size_t)-1, &file, &yctx))
 			fatal(120, "Error on preprocessing \"%s\"\n%s\n", current_file, yc.errmsg.c_str());

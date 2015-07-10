@@ -14,7 +14,6 @@
 #include "utils.h"
 #include "ycpp.h"
 
-
 void new_define(CMemFile& mfile, const char *option)
 {
 	char *p, c;
@@ -121,6 +120,7 @@ enum {
 	C_OPTION_CC_PATH,
 	C_OPTION_STRICT_MODE,
 	C_OPTION_BYPASS,
+	C_OPTION_IMPORT_BYPASS,
 	C_OPTION_DEBUG
 };
 
@@ -223,14 +223,31 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 			bypass_list.push_back(optarg);
 			save_my_args();
 			break;
+		case C_OPTION_IMPORT_BYPASS:
+		CB_BEGIN
+			FILE *fp;
+			char buf[2048];
+			fp = fopen(optarg, "r");
+			if(fp == NULL)
+				goto error;
+			while( fgets(buf, sizeof(buf), fp) != NULL ) {
+				char *p = buf + strlen(buf) - 1;
+				while(p >= buf && (*p == '\r' || *p == '\n') )
+					p--;
+				* ++p = '\0';
+				bypass_list.push_back(buf);
+			}
+			fclose(fp);
+		CB_END
+			break;
 
 		case C_OPTION_DEBUG:
-			do {
-				int level;
-				level = atol(optarg);
-				((MSG_LEVEL)level);
-				save_my_args();
-			} while(0);
+		CB_BEGIN
+			int level;
+			level = atol(optarg);
+			((MSG_LEVEL)level);
+			save_my_args();
+		CB_END
 			break;
 
 		case ':':
@@ -269,6 +286,7 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 	}
 	retval = 0;
 
+error:
 	levels--;
 	return retval;
 }
@@ -286,6 +304,7 @@ int CP_CONTEXT::get_options(int argc, char *argv[])
 		{"yz-cc-path",            1, 0, C_OPTION_CC_PATH },
 		{"yz-strict-mode",        1, 0, C_OPTION_STRICT_MODE },
 		{"yz-bypass",             1, 0, C_OPTION_BYPASS },
+		{"yz-import-bypass",      1, 0, C_OPTION_IMPORT_BYPASS },
 		{"yz-debug",              1, 0, C_OPTION_DEBUG },
 		{"include",  1, 0, C_OPTION_INCLUDE},
 		{"imacros",  1, 0, C_OPTION_IMACROS},
@@ -323,7 +342,7 @@ void CP_CONTEXT::save_my_args()
 
 bool CP_CONTEXT::check_if_bypass(const CC_STRING& filename)
 {
-	if( bypass_list.size() == 0 || filename.c_str() == NULL)
+	if( bypass_list.size() == 0 || filename.isnull())
 		return false;
 	for(size_t i = 0; i < bypass_list.size(); i++) {
 		const CC_STRING& p = bypass_list[i];
@@ -358,7 +377,7 @@ CC_STRING CP_CONTEXT::get_include_file_path(const CC_STRING& included_file, cons
 		return CC_STRING("");
 	if( included_file[0] == '/' )
 		return included_file;
-	if(current_file.c_str() != NULL) {
+	if(!current_file.isnull()) {
 		curdir = fsl_dirname(current_file.c_str());
 		curdir += '/';
 	}

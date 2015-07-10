@@ -14,6 +14,7 @@ YZ_PXCC             = None
 YZ_DEP_FILE         = None
 YZ_CL_FILE          = None
 YZ_BY_FILE          = None
+YZ_IMP_BYFILE       = None
 YZ_SHELL            = None
 YZ_BYPASS           = ""
 
@@ -45,7 +46,7 @@ def to_abs_path(x) :
 
 short_options = ''
 long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', "yz-save-dependency=", 'yz-save-cl=', 'yz-save-command-line=',
-    'yz-shell=', 'yz-bypass=', "yz-save-bypass="])
+    'yz-shell=', 'yz-bypass=', "yz-save-bypass=", "yz-import-bypass="])
 
 a, make_args = yzu.collect_options(short_options, long_options, sys.argv[1:])
 
@@ -75,6 +76,8 @@ for o, a in opts:
         YZ_CL_FILE = to_abs_path(a)
     elif o == 'save-bypass' :
         YZ_BY_FILE = to_abs_path(a)
+    elif o == 'import-bypass' :
+        YZ_IMP_BYFILE = to_abs_path(a)
     elif o == 'shell' :
         YZ_SHELL = a
     elif o == 'bypass' :
@@ -98,6 +101,8 @@ if YZ_CL_FILE is not None :
 if YZ_BY_FILE is not None :
     my_args += ' --yz-save-bypass=' + YZ_BY_FILE
     open(YZ_BY_FILE, "w").close()
+if YZ_IMP_BYFILE is not None :
+    my_args += ' --yz-import-bypass=' + YZ_IMP_BYFILE
 if YZ_BYPASS :
     my_args += YZ_BYPASS
 

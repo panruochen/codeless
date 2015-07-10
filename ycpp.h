@@ -175,6 +175,8 @@ SOURCE_TYPE check_source_type(const CC_STRING& filename);
 #define TR(tc,opr)       tc->syMap.TrId(opr).c_str()
 #define TOKEN_NAME(a)    (a).name.c_str()
 
+#define CB_BEGIN     {
+#define CB_END       }
 
 #include "ycpp.inl"
 #include "char.h"
