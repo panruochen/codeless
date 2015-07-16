@@ -1230,7 +1230,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 
 	if( check_file_processed(infile->name) && ! ctx->save_byfile.isnull() ) {
 		CC_STRING tmp = infile->name + '\n';
-		fsl_mp_append(ctx->save_byfile, tmp.c_str(), tmp.size());
+		fsl_append(ctx->save_byfile, tmp.c_str(), tmp.size());
 	}
 
 	if(ctx) {
@@ -1303,7 +1303,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 		goto error;
 
 	if(has_dep_file() && ! deptext.isnull() )
-		fsl_mp_append(ctx->save_depfile, deptext.c_str(), deptext.size());
+		fsl_append(ctx->save_depfile, deptext.c_str(), deptext.size());
 	if( conditionals.size() != 0 )
 		gex = "Unmatched #if";
 	else

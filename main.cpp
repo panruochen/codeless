@@ -134,7 +134,7 @@ static void save_command_line(const CC_STRING& filename, const CC_STRING& host_c
 	s += "  ## ";
 	s += my_args;
 	s += "\n\n";
-	fsl_mp_append(filename.c_str(), s.c_str(), s.size());
+	fsl_append(filename.c_str(), s.c_str(), s.size());
 }
 
 static CC_STRING get_cc(const CC_STRING& cc)

@@ -1,9 +1,9 @@
 #!/usr/bin/python
 
-'''
+__usage__ = '''
 Usage:
-	y-copy -s FILE1 -s FILE2 ... -s FILEn -C SRC_DIR -t TAGET_DIR LIST_FILE
-	y-copy -S FILE -C SRC_DIR -t TAGET_DIR LIST_FILE
+	y-copy -s FILE1 -s FILE2 ... -s FILEn -C SRC_DIR -t TAGET_DIR DEP_FILE
+	y-copy -S FILE -C SRC_DIR -t TAGET_DIR DEP_FILE
 
 Copy specified source files from source dir to target dir with directory hierarchy kept.
 '''
@@ -52,6 +52,10 @@ optionsparser.add_option("-t", "--target", action='store', help="Specify the tar
 if options.cwd and not os.path.isdir(options.cwd) :
     print >>sys.stderr, "No such directory: ", options.cwd
     exit(2)
+
+if len(args) == 0 :
+	print >>sys.stderr, __usage__
+	exit(2)
 
 sources = options.source
 if options.from_file is not None :

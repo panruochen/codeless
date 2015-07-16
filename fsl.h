@@ -8,9 +8,9 @@
 #endif
 
 FILE*      fsl_afopen(const CC_STRING& path);
-int        fsl_mp_fdappend(int fd, const void *buf, off_t n);
-void       fsl_mp_append(const CC_STRING& path, const void *buf, size_t n);
-void       fsl_mp_write(const CC_STRING& path, const void *buf, size_t n);
+int        fsl_fdappend(int fd, const void *buf, off_t n);
+void       fsl_append(const CC_STRING& path, const void *buf, size_t n);
+void       fsl_write(const CC_STRING& path, const void *buf, size_t n);
 int        fsl_copy(const CC_STRING& src, const CC_STRING& dst);
 bool       fsl_exist(const CC_STRING& path);
 int        fsl_mkdir(const CC_STRING *path);

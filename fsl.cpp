@@ -16,7 +16,7 @@
 #include "fsl.h"
 #include "utils.h"
 
-int fsl_mp_fdappend(int fd, const void *buf, off_t n)
+int fsl_fdappend(int fd, const void *buf, off_t n)
 {
 	struct flock flock;
 	off_t offset;
@@ -39,15 +39,15 @@ int fsl_mp_fdappend(int fd, const void *buf, off_t n)
 }
 
 
-void fsl_mp_append(const CC_STRING& filename, const void *buf, size_t n)
+void fsl_append(const CC_STRING& filename, const void *buf, size_t n)
 {
 	int fd;
 	fd = open(filename.c_str(), O_CREAT|O_BINARY|O_WRONLY|O_APPEND, 0664);
-	fsl_mp_fdappend(fd, buf, n);
+	fsl_fdappend(fd, buf, n);
 	close(fd);
 }
 
-void fsl_mp_write(const CC_STRING& filename, const void *buf, size_t n)
+void fsl_write(const CC_STRING& filename, const void *buf, size_t n)
 {
 	int fd;
 
