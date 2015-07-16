@@ -45,25 +45,25 @@ inline void CException::format(const char *fmt, ...)
 }
 
 
-inline CFile *Cycpp::current_file()
+inline CFile *CYcpp::current_file()
 {  return include_levels.top().srcfile; }
 
 
-inline void Cycpp::include_level_push(CFile *srcfile, FILE *of, size_t np, size_t if_level)
+inline void CYcpp::include_level_push(CFile *srcfile, FILE *of, size_t np, size_t if_level)
 {
-	Cycpp::INCLUDE_LEVEL lvl(srcfile,of,np,if_level);
+	CYcpp::INCLUDE_LEVEL lvl(srcfile,of,np,if_level);
 	include_levels.push(lvl);
 }
 
 
-inline Cycpp::INCLUDE_LEVEL Cycpp::include_level_pop()
+inline CYcpp::INCLUDE_LEVEL CYcpp::include_level_pop()
 {
-	Cycpp::INCLUDE_LEVEL lvl;
+	CYcpp::INCLUDE_LEVEL lvl;
 	include_levels.pop(lvl);
 	return lvl;
 }
 
-inline bool Cycpp::has_dep_file(void)
+inline bool CYcpp::has_dep_file(void)
 {
 	return rtctx && rtctx->save_depfile.size() != 0;
 }

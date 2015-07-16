@@ -83,7 +83,7 @@ static void __NO_USE__ show_usage_and_exit(int exit_code)
 "\n"
 "Report " PROGRAM_NAME " bugs to <coderelease@163.com>"
 ;
-	log(DML_RUNTIME, "%s", help);
+	log(LOGV_RUNTIME, "%s", help);
 	exit(exit_code);
 }
 
@@ -134,7 +134,7 @@ static void save_command_line(const CC_STRING& filename, const CC_STRING& host_c
 	s += "  ## ";
 	s += my_args;
 	s += "\n\n";
-	fsl_append(filename.c_str(), s.c_str(), s.size());
+	fol_append(filename.c_str(), s.c_str(), s.size());
 }
 
 static CC_STRING get_cc(const CC_STRING& cc)
@@ -221,7 +221,7 @@ int main(int argc, char *argv[])
 	size_t i;
 	CP_CONTEXT yctx;
 
-	my_dir = fsl_dirname(argv[0]);
+	my_dir = fol_dirname(argv[0]);
 
 	if( yctx.get_options(argc, argv) != 0 )
 		fatal(128, "Invalid options\n");
@@ -251,7 +251,7 @@ int main(int argc, char *argv[])
 	}
 
 	tcc_init(tc);
-	Cycpp yc;
+	CYcpp yc;
 
 	if( yctx.source_files.size() == 0 )
 		exit(0);

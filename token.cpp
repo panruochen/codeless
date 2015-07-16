@@ -24,7 +24,7 @@ static CC_STRING get_format(const CC_STRING& s)
 		fmt += s[0];
 		break;
 	default:
-		log(DML_RUNTIME, "Bad format: %s\n", s.c_str());
+		log(LOGV_RUNTIME, "Bad format: %s\n", s.c_str());
 		assert(0);
 	}
 	return fmt;

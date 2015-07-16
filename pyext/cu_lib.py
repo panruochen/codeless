@@ -1,3 +1,7 @@
+#============================#
+#  A common utility library  #
+#============================#
+
 def compare_argument_against_option(a, o) :
     if a + '=' == o :
         return 2

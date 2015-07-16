@@ -14,7 +14,7 @@
 #include "utils.h"
 #include "ycpp.h"
 
-void new_define(CMemFile& mfile, const char *option)
+static void new_define(CMemFile& mfile, const char *option)
 {
 	char *p, c;
 	CC_STRING s;
@@ -121,7 +121,7 @@ enum {
 	C_OPTION_STRICT_MODE,
 	C_OPTION_BYPASS,
 	C_OPTION_IMPORT_BYPASS,
-	C_OPTION_DEBUG
+	C_OPTION_VERBOSE
 };
 
 
@@ -241,11 +241,11 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 		CB_END
 			break;
 
-		case C_OPTION_DEBUG:
+		case C_OPTION_VERBOSE:
 		CB_BEGIN
-			int level;
-			level = atol(optarg);
-			((MSG_LEVEL)level);
+			LOG_VERB level;
+			level = (LOG_VERB) atol(optarg);
+			set_log_verbosity(level);
 			save_my_args();
 		CB_END
 			break;
@@ -305,7 +305,7 @@ int CP_CONTEXT::get_options(int argc, char *argv[])
 		{"yz-strict-mode",        1, 0, C_OPTION_STRICT_MODE },
 		{"yz-bypass",             1, 0, C_OPTION_BYPASS },
 		{"yz-import-bypass",      1, 0, C_OPTION_IMPORT_BYPASS },
-		{"yz-debug",              1, 0, C_OPTION_DEBUG },
+		{"yz-verbose",            1, 0, C_OPTION_VERBOSE },
 		{"include",  1, 0, C_OPTION_INCLUDE},
 		{"imacros",  1, 0, C_OPTION_IMACROS},
 		{"isystem",  1, 0, C_OPTION_ISYSTEM},
@@ -378,7 +378,7 @@ CC_STRING CP_CONTEXT::get_include_file_path(const CC_STRING& included_file, cons
 	if( included_file[0] == '/' )
 		return included_file;
 	if(!current_file.isnull()) {
-		curdir = fsl_dirname(current_file.c_str());
+		curdir = fol_dirname(current_file.c_str());
 		curdir += '/';
 	}
 	count = 0;

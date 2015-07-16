@@ -1,12 +1,12 @@
 EXTRA_CFLAGS    := -ggdb ##-O3
 EXTRA_CFLAGS    += -Wall -Wno-unused-result #-Wno-format
 DEFINES         :=
-SRCS            := ./ ./osdep/
+SRCS            := ./ ./support/
 INCS            := $(SRCS)
 TARGET_TYPE     := EXE
 TARGET          := ycpp.exe
 LIBS            := -lpthread
-OBJ_DIR         := objs
+OBJ_DIR         := .objs
 SRC_EXTS        := cpp
 TARGET_DEPENDS  := precedence-matrix.h
 

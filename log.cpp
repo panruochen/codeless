@@ -1,3 +1,7 @@
+/*
+ *  A runtime log library.
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,20 +12,31 @@
 #include <errno.h>
 #include "log.h"
 
-
 const char *log_file = "/var/exfat.log";
 static int log_fd = 2;
-MSG_LEVEL log_gate_level;
+static LOG_VERB verb_gate = LOGV_RUNTIME;  /* A gate for the log messages. Only message with more significant
+											  verbosity than the gate value would be output. */
 void fatal(int exit_status, const char *fmt, ...);
 
-void log(MSG_LEVEL level, const char *format, ...)
+void set_log_verbosity(LOG_VERB verb)
+{
+	int tmp = (int) LOGV_RUNTIME - (int) verb;
+
+	if(tmp < 0)
+		tmp = 0;
+	else if(tmp > (int)LOGV_RUNTIME)
+		tmp = (int) LOGV_RUNTIME;
+	verb_gate = (LOG_VERB) tmp;
+}
+
+void log(LOG_VERB verb, const char *format, ...)
 {
     char *buf, __buf0[1024];
     va_list ap;
     size_t n;
     int rc;
 
-    if((int)level > (int)log_gate_level)
+    if((unsigned long)verb < (unsigned long)verb_gate)
         return;
     if(log_fd == -1) {
         log_fd = open(log_file, O_CREAT|O_WRONLY|O_TRUNC, 0664);

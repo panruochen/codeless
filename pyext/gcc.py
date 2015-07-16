@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import os, sys, subprocess
-import yzu
+import cu_lib
 
 def ext_get(args) :
     for x in args.split() :
@@ -20,7 +20,7 @@ def cmd_exec(command):
 def get_predefines() :
     short_options = "m:f:O:"
     long_options  = []
-    o, a  = yzu.collect_options(short_options, long_options, sys.argv[1:])
+    o, a  = cu_lib.collect_options(short_options, long_options, sys.argv[1:])
     commands  = [os.environ["YZ_CC_PATH"]]
     commands += o
     commands += ('-E', '-x', ext_get(a), '-dM', '/dev/null')
@@ -38,7 +38,7 @@ def get_search_dirs() :
     flag = False
     short_options = "m:f:O:"
     long_options  = []
-    o, a  = yzu.collect_options(short_options, long_options, sys.argv[1:])
+    o, a  = cu_lib.collect_options(short_options, long_options, sys.argv[1:])
     commands = [os.environ["YZ_CC_PATH"], '-E', '-x', ext_get(a), '-v', '/dev/null']
 
     sp = subprocess.Popen(commands, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

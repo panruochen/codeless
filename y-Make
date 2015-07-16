@@ -6,7 +6,7 @@ YZ_EXTDIR = 'pyext'
 
 import re, os, sys, getopt, subprocess
 sys.path.append(os.path.dirname(sys.argv[0]) + '/' + YZ_EXTDIR)
-import yzu
+import cu_lib
 
 YZ_CC               = None
 YZ_PXCC             = None
@@ -48,7 +48,7 @@ short_options = ''
 long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', "yz-save-dependency=", 'yz-save-cl=', 'yz-save-command-line=',
     'yz-shell=', 'yz-bypass=', "yz-save-bypass=", "yz-import-bypass="])
 
-a, make_args = yzu.collect_options(short_options, long_options, sys.argv[1:])
+a, make_args = cu_lib.collect_options(short_options, long_options, sys.argv[1:])
 
 '''
 print a
@@ -91,7 +91,7 @@ if YZ_CC_PATH == '':
     print >>sys.stderr, "No such file: ", YZ_CC
     exit(2)
 
-my_args = ' --yz-cc=' + YZ_CC + ' --yz-debug=0 --yz-in-place=.bak'
+my_args = ' --yz-cc=' + YZ_CC + ' --yz-verbose=0 --yz-in-place=.bak'
 if YZ_DEP_FILE is not None :
     my_args += ' --yz-save-dependency=' + YZ_DEP_FILE
     open(YZ_DEP_FILE, "w").close()

@@ -14,7 +14,6 @@
 
 #include "ycpp.h"
 #include "utils.h"
-#include "stdpath.h"
 
 enum IF_VALUE {
 	IV_FALSE   = 0,
@@ -94,16 +93,13 @@ error:
 	return filename;
 }
 
-static char *GetRealPath(const CC_STRING& name, char *buf)
+static bool GetRealPath(const CC_STRING& name, CC_STRING& rp)
 {
-	static char rp_buf[PATH_MAX];
-	char *p = buf ? buf : rp_buf;
 /*  Use my own function rather than realpath since realpath will expand symblic links */
 //	if( realpath(name.c_str(), p) == NULL )
 //		return NULL;
-	if( regular_pathname_get(p, PATH_MAX, name.c_str()) == NULL )
-		return NULL;
-	return p;
+	rp = fol_realpath(name);
+	return ! rp.isnull() ;
 }
 
 static inline bool operator >= (const CToken& a, const CToken& b)
@@ -260,17 +256,17 @@ static bool DoCalculationOnStackTop(TCC_CONTEXT *tc, sym_t opr, CC_STACK<CToken>
 		opnd_stack.pop(b);
 		opnd_stack.pop(a);
 
-		log(DML_DEBUG, "%s ? %s : %s\n", TOKEN_NAME(a), TOKEN_NAME(b), TOKEN_NAME(c));
+		log(LOGV_DEBUG, "%s ? %s : %s\n", TOKEN_NAME(a), TOKEN_NAME(b), TOKEN_NAME(c));
 		result = a.u32_val ? b : c;
 		goto done;
 	} else if( opr != SSID_LOGIC_NOT && opr != SSID_BITWISE_NOT ) {
 		if( ! opnd_stack.pop(b) || ! opnd_stack.pop(a))
 			goto error_no_operands;
-		log(DML_DEBUG, "%s %s %s\n", TOKEN_NAME(a), TR(tc,opr), TOKEN_NAME(b));
+		log(LOGV_DEBUG, "%s %s %s\n", TOKEN_NAME(a), TR(tc,opr), TOKEN_NAME(b));
 	} else {
 		if( ! opnd_stack.pop(a) )
 			goto error_no_operands;
-		log(DML_DEBUG, "! %s\n", TOKEN_NAME(a));
+		log(LOGV_DEBUG, "! %s\n", TOKEN_NAME(a));
 	}
 	if( ! DoCalculate(a, opr, b, result, tc, gex) ) {
 		return false;
@@ -356,27 +352,27 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 	sym_t last_opr = SSID_SHARP;
 	char sign;
 	const char *symbol = NULL;
-	MSG_LEVEL dml = DML_DEBUG;
+	LOG_VERB dml = LOGV_DEBUG;
 	CC_STRING expansion;
 	CException ex2;
 
 	skip_blanks(saved_line);
 	dflag = contain(dx_traced_lines, line);
 	if(dflag)
-		log(DML_RUNTIME, "RAW: %s\n", line);
+		log(LOGV_RUNTIME, "RAW: %s\n", line);
 
 	expansion = ExpandLine(tc, false, line, gex);
 	if(gex->GetError() != NULL) {
 		if(dflag) {
-			log(DML_RUNTIME, "*Error* %s\n");
+			log(LOGV_RUNTIME, "*Error* %s\n");
 		}
 		return IV_UNKNOWN;
 	}
 
 	line = expansion.c_str();
 	if(dflag) {
-		log(DML_RUNTIME, "EXP: %s\n", line);
-		dml = DML_RUNTIME;
+		log(LOGV_RUNTIME, "EXP: %s\n", line);
+		dml = LOGV_RUNTIME;
 	}
 
 	opr_stack.push(SSID_SHARP);
@@ -500,7 +496,7 @@ again:
 				break;
 			case OP_ERROR:
 				gex->format("Cannot compare \"%s\" and \"%s\"", TR(tc,opr0), TR(tc,opr));
-				log(DML_ERROR, "*ERROR* %s\n", gex->GetError());
+				log(LOGV_ERROR, "*ERROR* %s\n", gex->GetError());
 				goto error;
 			}
 		} else {
@@ -534,14 +530,14 @@ again:
 			}
 			break;
 		default:
-			log(DML_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
+			log(LOGV_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
 			*gex = "[1] Bad expression";
 			goto error;
 		}
 	} while( opr_stack.size() != 0 );
 
 	if( opnd_stack.size() != 1 ) {
-		log(DML_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
+		log(LOGV_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
 		*gex = "[2] Bad expression";
 		goto error;
 	}
@@ -558,18 +554,17 @@ again:
 	return !!opnd_stack.top().i32_val;
 
 error:
-	log(DML_ERROR, "*Error* %s\n", gex->GetError());
-	fprintf(stderr, "*** %s\n", expansion.c_str());
+	log(LOGV_ERROR, "*Error* %s\n", gex->GetError());
 	return !gv_strict_mode ? IV_FALSE : IV_UNKNOWN;
 }
 
-const char *Cycpp::preprocessors[] = {
+const char *CYcpp::preprocessors[] = {
 	"#define", "#undef",
 	"#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif",
 	"#include", "#include_next"
 };
 
-CC_STRING Cycpp::do_elif(int mode)
+CC_STRING CYcpp::do_elif(int mode)
 {
 	CC_STRING output;
 	CC_STRING trailing;
@@ -598,26 +593,26 @@ CC_STRING Cycpp::do_elif(int mode)
 	return output;
 }
 
-bool Cycpp::current_state_pop()
+bool CYcpp::current_state_pop()
 {
 	if( conditionals.pop(current) )
 		return true;
 	return false;
 }
 
-bool Cycpp::under_false_conditional()
+bool CYcpp::under_false_conditional()
 {
 	return conditionals.size() > 1 && conditionals.top().curr_value == IV_FALSE;
 }
 
 
-void Cycpp::AddDependency(const char *prefix, const CC_STRING& filename)
+void CYcpp::AddDependency(const char *prefix, const CC_STRING& filename)
 {
-	char *rp_name;
-	rp_name = GetRealPath(filename, NULL);
-	if( rp_name != NULL ) {
+	CC_STRING rp;
+
+	if( GetRealPath(filename, rp) ) {
 		deptext += prefix;
-		deptext += rp_name;
+		deptext += rp;
 		deptext += "\n";
 	}
 }
@@ -640,7 +635,7 @@ static CC_STRING MakeSemaName(const CC_STRING& filename)
 
 }
 
-void Cycpp::do_define(const char *line)
+void CYcpp::do_define(const char *line)
 {
 	const char *p;
 	CC_STRING word;
@@ -661,12 +656,12 @@ void Cycpp::do_define(const char *line)
 		tc->maMap.Put(mid, ma);
 		assert(tc->maMap.Lookup(mid) != NULL);
 		if( dx_traced_macros.size() > 0 && find(dx_traced_macros, word))
-			log(DML_RUNTIME, "%s:%u:  %s\n", current_file()->name.c_str(), current_file()->line, raw_line.c_str());
+			log(LOGV_RUNTIME, "%s:%u:  %s\n", current_file()->name.c_str(), current_file()->line, raw_line.c_str());
 	}
 }
 
 
-CFile *Cycpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
+CFile *CYcpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 {
 	bool in_sys_dir;
 	CC_STRING ifpath, itoken, iline;
@@ -697,7 +692,7 @@ CFile *Cycpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 			CC_STRING cifile, cipath, bakfile, suffix;
 			CC_STRING semname;
 			sem_t *sem;
-			CC_STRING dir = fsl_dirname(ifpath);
+			CC_STRING dir = fol_dirname(ifpath);
 			int retval __NO_USE__ = -1;
 
 			for(unsigned int i = 0; ; i++) {
@@ -707,7 +702,7 @@ CFile *Cycpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 					suffix.format(".c_include%u", i);
 				cifile = itoken + suffix;
 				cipath = ifpath + suffix;
-				if( ! fsl_exist(cipath) )
+				if( ! fol_exist(cipath) )
 					break;
 			}
 			bakfile = ifpath + baksuffix;
@@ -718,10 +713,10 @@ CFile *Cycpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 			sem = sem_open(semname.c_str(), O_CREAT, 0666, 1);
 			sem_wait(sem);
 
-			if( ! fsl_exist(bakfile) )
-				retval = fsl_copy(ifpath, cipath);
+			if( ! fol_exist(bakfile) )
+				retval = fol_copy(ifpath, cipath);
 			else
-				retval = fsl_copy(bakfile, cipath);
+				retval = fol_copy(bakfile, cipath);
 			sem_post(sem);
 			sem_unlink(semname.c_str());
 			if(retval < 0) {
@@ -747,7 +742,7 @@ done:
 }
 
 
-bool Cycpp::do_include(sym_t preprocessor, const char *line, const char **output)
+bool CYcpp::do_include(sym_t preprocessor, const char *line, const char **output)
 {
 	FILE *outf;
 	CFile *file;
@@ -756,7 +751,7 @@ bool Cycpp::do_include(sym_t preprocessor, const char *line, const char **output
 	if( file == NULL )
 		return false;
 	if(file->Open()) {
-		include_level_push(file, NULL, COUNT_OF(Cycpp::preprocessors), conditionals.size());
+		include_level_push(file, NULL, COUNT_OF(CYcpp::preprocessors), conditionals.size());
 	} else {
 		gex.format("Cannot open `%s'", file->name.c_str());
 		return false;
@@ -766,7 +761,7 @@ bool Cycpp::do_include(sym_t preprocessor, const char *line, const char **output
 	return true;
 }
 
-bool Cycpp::SM_Run()
+bool CYcpp::SM_Run()
 {
 	FILE *out_fp = include_levels.top().outfp;
 	const char *pos;
@@ -910,7 +905,7 @@ done:
 }
 
 
-void Cycpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx)
+void CYcpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx)
 {
 	this->num_preprocessors = num_preprocessors;
 	this->tc                = tc;
@@ -921,8 +916,6 @@ void Cycpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx)
 	current.curr_value = IV_TRUE;
 
 	assert(include_levels.size() == 0);
-
-	CC_STRING tmpath;
 
 	raw_line.clear();
 	line.clear();
@@ -947,7 +940,7 @@ static inline int get_sign(const CToken& token)
 	return 0;
 }
 
-sym_t Cycpp::GetPreprocessor(const char *line, const char **pos)
+sym_t CYcpp::GetPreprocessor(const char *line, const char **pos)
 {
 	const char *p;
 	CC_STRING word;
@@ -975,7 +968,7 @@ sym_t Cycpp::GetPreprocessor(const char *line, const char **pos)
 //
 // Read and unfold one semantic line from the source file, stripping off any coments.
 //
-int Cycpp::ReadLine()
+int CYcpp::ReadLine()
 {
 	enum {
 		STAT_INIT,
@@ -1130,24 +1123,20 @@ handle_last_line:
 				break;
 		}
 	}
-	if( 0 && include_levels.size() == 1) {
-	fprintf(stderr, "*** %s", raw_line.c_str());
-	fprintf(stderr, "+++ %s", line.c_str());
-	}
 	return 1;
 }
 
-bool Cycpp::check_file_processed(const CC_STRING& filename)
+bool CYcpp::check_file_processed(const CC_STRING& filename)
 {
 	CC_STRING bakfile;
 
 	bakfile = filename + baksuffix;
-	if( ! fsl_exist(bakfile) )
+	if( ! fol_exist(bakfile) )
 		return false;
 	return true;
 }
 
-bool Cycpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
+bool CYcpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 {
 	if( ifiles.size() == 0)
 		return true;
@@ -1178,7 +1167,7 @@ bool Cycpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 	return true;
 }
 
-bool Cycpp::RunEngine(size_t cond)
+bool CYcpp::RunEngine(size_t cond)
 {
 	if(include_levels.size() == cond)
 		return true;
@@ -1218,7 +1207,7 @@ bool Cycpp::RunEngine(size_t cond)
  *
  *  Returns a pointer to the error messages on failure, or nil on success.
  */
-bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
+bool CYcpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
 {
 	bool bypass;
 	FILE *out_fp;
@@ -1230,7 +1219,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 
 	if( check_file_processed(infile->name) && ! ctx->save_byfile.isnull() ) {
 		CC_STRING tmp = infile->name + '\n';
-		fsl_append(ctx->save_byfile, tmp.c_str(), tmp.size());
+		fol_append(ctx->save_byfile, tmp.c_str(), tmp.size());
 	}
 
 	if(ctx) {
@@ -1256,7 +1245,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 		utb.modtime = stb.st_mtime;
 	}
 	if( ! infile->Open() ) {
-		log(DML_RUNTIME, "Cannot open \"%s\" for reading\n");
+		log(LOGV_RUNTIME, "Cannot open \"%s\" for reading\n");
 		return false;
 	}
 
@@ -1277,7 +1266,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 			strcpy(tmp_outfile, "#yccp-XXXXXX");
 			fd = mkstemp(tmp_outfile);
 			if( fd < 0 ) {
-				log(DML_RUNTIME, "Cannot open \"%s\" for writing\n", ctx->outfile.c_str());
+				log(LOGV_RUNTIME, "Cannot open \"%s\" for writing\n", ctx->outfile.c_str());
 				infile->Close();
 				return false;
 			}
@@ -1285,14 +1274,14 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 		}
 	}
 
-	if( num_preprocessors >= COUNT_OF(Cycpp::preprocessors) )
-		num_preprocessors  = COUNT_OF(Cycpp::preprocessors);
+	if( num_preprocessors >= COUNT_OF(CYcpp::preprocessors) )
+		num_preprocessors  = COUNT_OF(CYcpp::preprocessors);
 	Reset(tc, num_preprocessors, ctx);
 
 	if(has_dep_file())
 		AddDependency("", infile->name);
 
-	include_level_push(infile, out_fp, COUNT_OF(Cycpp::preprocessors), conditionals.size());
+	include_level_push(infile, out_fp, COUNT_OF(CYcpp::preprocessors), conditionals.size());
 
 	if(ctx != NULL) {
 		GetCmdLineIncludeFiles(ctx->imacro_files, 2);
@@ -1303,7 +1292,7 @@ bool Cycpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 		goto error;
 
 	if(has_dep_file() && ! deptext.isnull() )
-		fsl_append(ctx->save_depfile, deptext.c_str(), deptext.size());
+		fol_append(ctx->save_depfile, deptext.c_str(), deptext.size());
 	if( conditionals.size() != 0 )
 		gex = "Unmatched #if";
 	else

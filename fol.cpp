@@ -1,3 +1,7 @@
+/*
+ *  A multi-process safe file operation library.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,10 +17,10 @@
 #include <errno.h>
 #include <libgen.h>
 
-#include "fsl.h"
+#include "fol.h"
 #include "utils.h"
 
-int fsl_fdappend(int fd, const void *buf, off_t n)
+int fol_fdappend(int fd, const void *buf, off_t n)
 {
 	struct flock flock;
 	off_t offset;
@@ -39,15 +43,15 @@ int fsl_fdappend(int fd, const void *buf, off_t n)
 }
 
 
-void fsl_append(const CC_STRING& filename, const void *buf, size_t n)
+void fol_append(const CC_STRING& filename, const void *buf, size_t n)
 {
 	int fd;
 	fd = open(filename.c_str(), O_CREAT|O_BINARY|O_WRONLY|O_APPEND, 0664);
-	fsl_fdappend(fd, buf, n);
+	fol_fdappend(fd, buf, n);
 	close(fd);
 }
 
-void fsl_write(const CC_STRING& filename, const void *buf, size_t n)
+void fol_write(const CC_STRING& filename, const void *buf, size_t n)
 {
 	int fd;
 
@@ -59,7 +63,7 @@ void fsl_write(const CC_STRING& filename, const void *buf, size_t n)
 }
 
 
-int fsl_copy(const CC_STRING& src, const CC_STRING& dst)
+int fol_copy(const CC_STRING& src, const CC_STRING& dst)
 {
 	int fs, fd, last_errno = 0;
 	static char buf[512];
@@ -93,7 +97,7 @@ error:
 }
 
 
-FILE *fsl_afopen(const CC_STRING& filename)
+FILE *fol_afopen(const CC_STRING& filename)
 {
 	struct stat stbuf;
 	const char *mode ;
@@ -108,13 +112,13 @@ FILE *fsl_afopen(const CC_STRING& filename)
 }
 
 
-bool fsl_exist(const CC_STRING& filename)
+bool fol_exist(const CC_STRING& filename)
 {
 	struct stat stb;
 	return stat(filename, &stb) == 0;
 }
 
-int fsl_mkdir(const CC_STRING& dirname)
+int fol_mkdir(const CC_STRING& dirname)
 {
     CC_STRING newdir;
 	char *p, *dir;
@@ -122,7 +126,7 @@ int fsl_mkdir(const CC_STRING& dirname)
 	int retval = 0;
 
 	if( dirname[0] != '/' ) {
-        newdir = fsl_realpath(dirname);
+        newdir = fol_realpath(dirname);
 		if( newdir.isnull() ) {
 			retval = -EINVAL;
 			goto fail;
@@ -161,7 +165,7 @@ fail:
 }
 
 
-CC_STRING fsl_dirname(const CC_STRING& path)
+CC_STRING fol_dirname(const CC_STRING& path)
 {
 	char *tmp;
 	CC_STRING dir;
@@ -193,13 +197,13 @@ static char *__stdpath_uplevel(const char *const path, char *pos)
 }
 
 #define  HAVE_TRAILING_SPLASH  0
-CC_STRING fsl_realpath(const CC_STRING& src)
+CC_STRING fol_realpath(const CC_STRING& src)
 {
     char dest[4096];
 	const char *s;
 	char *d;
 	int state = 0;
-	
+
 	if( src[0] != '/' ) {
 		(void) getcwd(dest, sizeof(dest));
 		d = dest + strlen(dest);
@@ -219,7 +223,7 @@ CC_STRING fsl_realpath(const CC_STRING& src)
 			default:      *d++ = c; break;
 			}
 			break;
-		case 1:	
+		case 1:
 			#if !HAVE_TRAILING_SPLASH
 				if( *(d-1) == UNIX_DD )
 					*--d   = '\0';
@@ -229,7 +233,7 @@ CC_STRING fsl_realpath(const CC_STRING& src)
 			#endif
 			goto done;
 		case 2:	goto fail;
-		case 3:	
+		case 3:
 			switch(c) {
 			case '\0':    *d = c; state = 1; break;
 			case UNIX_DD:
@@ -251,7 +255,7 @@ CC_STRING fsl_realpath(const CC_STRING& src)
 			switch(c) {
 			case '\0':    state = 1; goto uplevel;
 			case UNIX_DD:
-			case DOS_DD:  state = 3; 
+			case DOS_DD:  state = 3;
 				{
 					char *t;
 				uplevel:
@@ -270,11 +274,11 @@ CC_STRING fsl_realpath(const CC_STRING& src)
 done:
 	return dest;
 fail:
-	return NULL;
+	return CC_STRING("");
 }
 
 
-int fsl_copy_with_parent(const CC_STRING& src, const CC_STRING& dst)
+int fol_copy_with_parent(const CC_STRING& src, const CC_STRING& dst)
 {
 	CC_STRING ddir;
 	const char *pos;
@@ -283,10 +287,10 @@ int fsl_copy_with_parent(const CC_STRING& src, const CC_STRING& dst)
 	pos = strrchr(dst.c_str(), '/');
 	if(pos != NULL) {
 		ddir.strcat(dst.c_str(), pos);
-		retval = fsl_mkdir(ddir);
+		retval = fol_mkdir(ddir);
 		if( retval != 0)
 			return retval;
 	}
-	return fsl_copy(src, dst);
+	return fol_copy(src, dst);
 }
 

@@ -5,7 +5,7 @@
 #include "cc_string.h"
 
 class CFile {
-	friend class Cycpp;
+	friend class CYcpp;
 protected:
 	CC_STRING  name;
 	size_t     line;
@@ -54,7 +54,7 @@ public:
 	inline size_t Size();
 };
 
-#include "gfile.inl"
+#include "file.inl"
 
 #endif
 

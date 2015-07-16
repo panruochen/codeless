@@ -1,5 +1,5 @@
 #include "cc_string.h"
-#include "gfile.h"
+#include "file.h"
 
 ////////////////////////////////////////////////////////////////
 //  Real File Class

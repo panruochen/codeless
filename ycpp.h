@@ -8,7 +8,7 @@
 #include "cc_array.h"
 #include "log.h"
 #include "tcc.h"
-#include "fsl.h"
+#include "fol.h"
 
 #if __linux
 #include <linux/limits.h>
@@ -18,7 +18,7 @@
 
 #define __NO_USE__   __attribute__((__unused__))
 
-#include "gfile.h"
+#include "file.h"
 
 
 class CP_CONTEXT {
@@ -78,7 +78,7 @@ public:
 };
 
 
-class Cycpp {
+class CYcpp {
 protected:
 	static const char *preprocessors[];
 	size_t       num_preprocessors;
@@ -122,9 +122,9 @@ protected:
 
 	/* line-process based variables */
 	ssize_t comment_start;
-	CC_STRING    line;
-	CC_STRING    raw_line;
-	CC_STRING    new_line;
+	CC_STRING    line;     /* The comment-stripped line */
+	CC_STRING    raw_line; /* The original input line */
+	CC_STRING    new_line; /* The processed output line */
 
 	CC_STRING  do_elif(int mode);
 	void       do_define(const char *line);
@@ -148,7 +148,7 @@ protected:
 
 public:
 	CC_STRING errmsg;
-	Cycpp() {
+	CYcpp() {
 		tc          = NULL;
 	}
 	bool DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile  *infile, CP_CONTEXT *cp_ctx);
@@ -159,10 +159,7 @@ CC_STRING  ExpandLine(TCC_CONTEXT *tc, bool for_include, const char *line, CExce
 
 bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *token, CException *gex, bool for_include);
 
-void new_define(CMemFile& mfile, const char *option);
 void handle_undef(TCC_CONTEXT *tc, const char *line);
-CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
-	bool include_current_dir, bool include_next = false, bool *in_sys_dir = NULL);
 
 enum SOURCE_TYPE {
 	SOURCE_TYPE_ERR = 0,

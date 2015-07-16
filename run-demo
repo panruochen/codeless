@@ -46,7 +46,7 @@ function step1()
 function step2()
 {
 	make clean
-	../../y-Make --yz-cc=gcc --yz-print-command-line=commands.txt --yz-shell=bash -j1 --yz-bypass=ar.c --yz-bypass=dir.c
+	../../y-Make --yz-cc=gcc --yz-save-command-line=commands.txt --yz-shell=bash -j1 --yz-bypass=ar.c --yz-bypass=dir.c
 	yMAKE=$(executable_get)
 	objcopy -O binary $yMAKE yy-2.bin
 	objdump -d $yMAKE > yy-2.asm
