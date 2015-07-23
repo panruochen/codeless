@@ -118,7 +118,7 @@ enum {
 	C_OPTION_IN_PLACE,
 	C_OPTION_CC,
 	C_OPTION_CC_PATH,
-	C_OPTION_STRICT_MODE,
+	C_OPTION_CLEANER_MODE,
 	C_OPTION_BYPASS,
 	C_OPTION_IMPORT_BYPASS,
 	C_OPTION_VERBOSE
@@ -214,8 +214,8 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 			save_my_args();
 			break;
 
-		case C_OPTION_STRICT_MODE:
-			gv_strict_mode = true;
+		case C_OPTION_CLEANER_MODE:
+			gv_preprocess_mode = false;
 			save_my_args();
 			break;
 
@@ -302,7 +302,7 @@ int CP_CONTEXT::get_options(int argc, char *argv[])
 		{"yz-in-place",           2, 0, C_OPTION_IN_PLACE },
 		{"yz-cc",                 1, 0, C_OPTION_CC },
 		{"yz-cc-path",            1, 0, C_OPTION_CC_PATH },
-		{"yz-strict-mode",        1, 0, C_OPTION_STRICT_MODE },
+		{"yz-cleaner-mode",       0, 0, C_OPTION_CLEANER_MODE },
 		{"yz-bypass",             1, 0, C_OPTION_BYPASS },
 		{"yz-import-bypass",      1, 0, C_OPTION_IMPORT_BYPASS },
 		{"yz-verbose",            1, 0, C_OPTION_VERBOSE },

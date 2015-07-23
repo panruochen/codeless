@@ -66,6 +66,7 @@
 "It is okay for case 7 (branch 1)"
 #elif 1
 "It is okay for case 7 (branch 2)"
+#endif
 
 /**********************************************/
 // case 8
@@ -74,10 +75,10 @@
 "It is error for case 8"
 #elif X
 "It is okay for case 8 (branch 1)"
-#elif 1 + /* Comment Line 1 -- okay
-		   Comment Line 2 -- okay
-		   Comment Line 3 -- okay
-*/
+#elif 1 +0 /* Comment Line 1 -- okay
+		    * Comment Line 2 -- okay
+		    * Comment Line 3 -- okay
+            */
 "It is okay for case 8 (branch 2)"
 #else
 "It is error for case 8"
@@ -88,7 +89,7 @@
 /**********************************************/
 #define CASE9_X1      (2 * 6)
 #define CASE9_X2      (4 + 5)
-#define CASE9_Z       CASE9_X1 - CASE9_X2 + 1 - 2 * 2 
+#define CASE9_Z       CASE9_X1 - CASE9_X2 + 1 - 2 * 2
 
 #if CASE9_Z // It is an error if you see this line
 "It is error for case 9"

@@ -15,11 +15,7 @@
 #include "ycpp.h"
 #include "utils.h"
 
-enum IF_VALUE {
-	IV_FALSE   = 0,
-	IV_UNKNOWN = 2,
-	IV_TRUE    = 1,
-};
+
 
 static bool check_prev_operator(sym_t id)
 {
@@ -50,19 +46,20 @@ static bool check_prev_operator(sym_t id)
 }
 
 
-static inline IF_VALUE operator ! (IF_VALUE val)
+static inline TRI_STATE operator ! (TRI_STATE val)
 {
-	return (val == IV_UNKNOWN) ? IV_UNKNOWN :
-		(val == IV_FALSE ? IV_TRUE : IV_FALSE);
+	return (val == TSV_X) ? TSV_X :
+		(val == TSV_0 ? TSV_1 : TSV_0);
 }
 
 //
 // Get the include file name without surrouding angle brackets or double quoation marks
 //
-static CC_STRING GetIncludeFileName(const CC_STRING& line, char& style)
+static CC_STRING GetIncludeFileName(const CC_STRING& line, bool& quoted)
 {
 	const char *p1, *p2;
 	CC_STRING filename;
+	char style = '\0';
 
 	p1 = line.c_str();
 	skip_blanks(p1);
@@ -88,6 +85,7 @@ static CC_STRING GetIncludeFileName(const CC_STRING& line, char& style)
 			goto error;
 	}
 	filename = CC_STRING(p1, p2+1);
+	quoted = (style == '"');
 
 error:
 	return filename;
@@ -139,7 +137,7 @@ static inline bool operator != (const CToken& a, uint32_t val)
 
 static bool DoCalculate(CToken& opnd1, sym_t opr, CToken& opnd2, CToken& result, TCC_CONTEXT *tc, CException *ex)
 {
-	if( !gv_strict_mode ) {
+	if( gv_preprocess_mode ) {
 		if(opnd1.attr == CToken::TA_IDENT) {
 			opnd1.attr    = CToken::TA_UINT;
 			opnd1.u32_val = 0;
@@ -289,27 +287,27 @@ static bool is_opr(sym_t sym)
 static int symbol_definition_check(TCC_CONTEXT *tc, const char *line, bool reverse, CToken *result, CException *gex)
 {
 	short attr = CToken::TA_IDENT;
-	int retval = IV_UNKNOWN;
+	int retval = TSV_X;
 	CToken token;
 	CMacro *minfo;
 
 	if( ! ReadToken(tc, &line, &token, gex, false) || gex->GetError() != NULL )
 		goto error;
 	minfo = tc->maMap.Lookup(token.id);
-	if( gv_strict_mode ) {
+	if( ! gv_preprocess_mode ) {
 		if(minfo == NULL) {
-			retval = IV_UNKNOWN;
+			retval = TSV_X;
 			attr   = CToken::TA_IDENT;
 		} else if(minfo == CMacro::NotDef) {
-			retval = reverse ? IV_TRUE : IV_FALSE;
+			retval = reverse ? TSV_1 : TSV_0;
 			attr   = CToken::TA_UINT;
 		} else {
-			retval = reverse ? IV_FALSE : IV_TRUE;
+			retval = reverse ? TSV_0 : TSV_1;
 			attr   = CToken::TA_UINT;
 		}
 	} else {
 		attr    = CToken::TA_UINT;
-		retval  = (minfo == NULL) ? IV_FALSE : IV_TRUE;
+		retval  = (minfo == NULL) ? TSV_0 : TSV_1;
 		retval ^= reverse;
 	}
 
@@ -320,8 +318,8 @@ error:
 		result->id      = SSID_SYMBOL_X;
 		result->name    = TR(tc, SSID_SYMBOL_X);
 	}
-	if( !gv_strict_mode )
-		assert(retval != IV_UNKNOWN);
+	if( gv_preprocess_mode )
+		assert(retval != TSV_X);
 	return retval;
 }
 
@@ -366,7 +364,7 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 		if(dflag) {
 			log(LOGV_RUNTIME, "*Error* %s\n");
 		}
-		return IV_UNKNOWN;
+		return TSV_X;
 	}
 
 	line = expansion.c_str();
@@ -543,11 +541,11 @@ again:
 	}
 
 	if( opnd_stack.top().attr == CToken::TA_IDENT ) {
-		if( !gv_strict_mode ) {
+		if( gv_preprocess_mode ) {
 			*gex = ex2;
-			return IV_FALSE;
+			return TSV_0;
 		}
-		return IV_UNKNOWN;
+		return TSV_X;
 	}
 	log(dml, "Numberic Value: %u\n", opnd_stack.top().i32_val);;
 	*gex = "";
@@ -555,7 +553,7 @@ again:
 
 error:
 	log(LOGV_ERROR, "*Error* %s\n", gex->GetError());
-	return !gv_strict_mode ? IV_FALSE : IV_UNKNOWN;
+	return gv_preprocess_mode ? TSV_0 : TSV_X;
 }
 
 const char *CYcpp::preprocessors[] = {
@@ -563,6 +561,14 @@ const char *CYcpp::preprocessors[] = {
 	"#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif",
 	"#include", "#include_next"
 };
+
+TRI_STATE CYcpp::eval_upper_condition(bool on_if)
+{
+	const size_t n = on_if ? 0 : 1;
+	CConditionalChain **top;
+	assert(conditionals.size() >= n);
+	return conditionals.size() == n ? TSV_1 : (top = &(conditionals.top()) - n, (*top)->eval_condition());
+}
 
 CC_STRING CYcpp::do_elif(int mode)
 {
@@ -591,18 +597,6 @@ CC_STRING CYcpp::do_elif(int mode)
 	}
 	output += trailing;
 	return output;
-}
-
-bool CYcpp::current_state_pop()
-{
-	if( conditionals.pop(current) )
-		return true;
-	return false;
-}
-
-bool CYcpp::under_false_conditional()
-{
-	return conditionals.size() > 1 && conditionals.top().curr_value == IV_FALSE;
 }
 
 
@@ -635,6 +629,8 @@ static CC_STRING MakeSemaName(const CC_STRING& filename)
 
 }
 
+/******************************************************************************************/
+
 void CYcpp::do_define(const char *line)
 {
 	const char *p;
@@ -656,31 +652,30 @@ void CYcpp::do_define(const char *line)
 		tc->maMap.Put(mid, ma);
 		assert(tc->maMap.Lookup(mid) != NULL);
 		if( dx_traced_macros.size() > 0 && find(dx_traced_macros, word))
-			log(LOGV_RUNTIME, "%s:%u:  %s\n", current_file()->name.c_str(), current_file()->line, raw_line.c_str());
+			log(LOGV_RUNTIME, "%s:%u:  %s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), raw_line.c_str());
 	}
 }
 
 
 CFile *CYcpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 {
-	bool in_sys_dir;
+	bool in_sys_dir, quoted;
 	CC_STRING ifpath, itoken, iline;
-	char style = 0;
 	uint8_t filetype;
 	CFile *retval = NULL;
 
-	ifpath = ExpandLine(tc, true, line, &gex);
-
+	iline = ExpandLine(tc, true, line, &gex);
 	if(gex.GetError() != NULL)
 		goto done;
 
-	itoken = GetIncludeFileName(ifpath, style);
+	itoken = GetIncludeFileName(iline, quoted);
+	iline.clear();
 	if( itoken.isnull() ) {
 		gex.format("Invalid include preprocessor: %s", raw_line.c_str());
 		goto done;
 	}
-	ifpath = rtctx->get_include_file_path(itoken, current_file()->name,
-		style == '"', preprocessor == SSID_SHARP_INCLUDE_NEXT, &in_sys_dir);
+	ifpath = rtctx->get_include_file_path(itoken, GetCurrentFileName(),
+		quoted, preprocessor == SSID_SHARP_INCLUDE_NEXT, &in_sys_dir);
 	if(ifpath.isnull()) {
 		gex.format("Cannot find include file \"%s\"", itoken.c_str());
 		goto done;
@@ -706,10 +701,9 @@ CFile *CYcpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 					break;
 			}
 			bakfile = ifpath + baksuffix;
-			iline = CC_STRING("#include ") + (style == '"' ? '"' : '<') + cifile +
-				(style == '"' ? '"' : '>') + '\n';
+			iline = CC_STRING("#include ") + (quoted ? '"' : '<') + cifile + (quoted ? '"' : '>') + '\n';
 			*outf = NULL;
-			semname = MakeSemaName(current_file()->name);
+			semname = MakeSemaName(GetCurrentFileName());
 			sem = sem_open(semname.c_str(), O_CREAT, 0666, 1);
 			sem_wait(sem);
 
@@ -751,7 +745,7 @@ bool CYcpp::do_include(sym_t preprocessor, const char *line, const char **output
 	if( file == NULL )
 		return false;
 	if(file->Open()) {
-		include_level_push(file, NULL, COUNT_OF(CYcpp::preprocessors), conditionals.size());
+		PushIncludedFile(file, NULL, COUNT_OF(CYcpp::preprocessors), conditionals.size());
 	} else {
 		gex.format("Cannot open `%s'", file->name.c_str());
 		return false;
@@ -763,9 +757,9 @@ bool CYcpp::do_include(sym_t preprocessor, const char *line, const char **output
 
 bool CYcpp::SM_Run()
 {
-	FILE *out_fp = include_levels.top().outfp;
+	FILE *out_fp = included_files.top().outfp;
 	const char *pos;
-	IF_VALUE result = IV_FALSE;
+	TRI_STATE result = TSV_0;
 	const char *output = raw_line.c_str();
 	sym_t preprocessor;
 	CC_STRING expanded_line;
@@ -773,13 +767,18 @@ bool CYcpp::SM_Run()
 	pos = line.c_str();
 	preprocessor = GetPreprocessor(pos, &pos);
 
-	dv_current_file = current_file()->name.c_str();
-	dv_current_line = current_file()->line;
+	dv_current_file = GetCurrentFileName().c_str();
+	dv_current_line = GetCurrentLineNumber();
 //	fprintf(stderr, "ON %s:%u\n", dv_current_file, dv_current_line);
 
 #if 0
-	if( include_levels.size() == 1 && 0 != strcmp(dv_current_file, "<command line>") && dv_current_line > 1)
+//	if( included_files.size() == 1 && 0 != strcmp(dv_current_file, "<command line>") && dv_current_line > 1)
+
+	CFile *sfile = (&included_files.top() + 1 - included_files.size())->srcfile;
+	if( strstr(sfile->name.c_str(), "emif-common.c") &&
+		strstr(dv_current_file, "include/config.h") && dv_current_line == 5)
 	{
+//		fprintf(stderr, "++++ %s:%u\n", dv_current_file, dv_current_line);
 		volatile int loop = 1;
 		do {} while (loop);
 	}
@@ -787,89 +786,100 @@ bool CYcpp::SM_Run()
 
 	switch(preprocessor) {
 	case SSID_SHARP_IF:
-		if( current.curr_value != IV_FALSE )
-			result = (IF_VALUE) expression_evaluate(tc, pos, &gex);
+		if( eval_upper_condition(true) != TSV_0 )
+			result = (TRI_STATE) expression_evaluate(tc, pos, &gex);
 		goto handle_if_branch;
-	case SSID_SHARP_IFNDEF:
-		if( current.curr_value != IV_FALSE )
-			result = (IF_VALUE) symbol_definition_check(tc, pos, true, NULL, &gex);
-		goto handle_if_branch;
-	case SSID_SHARP_IFDEF:
-		if( current.curr_value != IV_FALSE )
-			result = (IF_VALUE) symbol_definition_check(tc, pos, false, NULL, &gex);
-handle_if_branch:
 
-		if( !gv_strict_mode && result == IV_UNKNOWN) {
-			goto done;
+	case SSID_SHARP_IFNDEF:
+		if( eval_upper_condition(true) != TSV_0 )
+			result = (TRI_STATE) symbol_definition_check(tc, pos, true, NULL, &gex);
+		goto handle_if_branch;
+
+	case SSID_SHARP_IFDEF:
+		if( eval_upper_condition(true) != TSV_0 )
+			result = (TRI_STATE) symbol_definition_check(tc, pos, false, NULL, &gex);
+
+handle_if_branch:
+		if( result == TSV_X ) {
+			if( gv_preprocess_mode ) {
+				gex = "Error on processing conditional";
+				goto done;
+			}
 		}
 
-		conditionals.push(current);
-		if( current.curr_value != IV_FALSE ) {
-			current.if_value   =
-			current.curr_value = result;
-			current.elif_value = IV_UNKNOWN;
-			if(current.if_value != IV_UNKNOWN) output = NULL;
-		} else
-			goto done;
+		conditionals.push(new CConditionalChain());
+
+		upmost_chain()->enter_if_branch(result);
+		upmost_chain()->filename = dv_current_file;
+		upmost_chain()->line = dv_current_line;
+		if(eval_current_condition() != TSV_X)
+			output = NULL;
 		break;
+
 	case SSID_SHARP_ELIF:
-		if( under_false_conditional() )
+		if( eval_upper_condition(false) == TSV_0 )
 			goto done;
-		result = (IF_VALUE) expression_evaluate(tc, pos, &gex);
-		if( !gv_strict_mode && result == IV_UNKNOWN)
+		if(  eval_current_condition() == TSV_1 ) {
+			upmost_chain()->enter_elif_branch(TSV_0);
+			goto done;
+		}
+		result = (TRI_STATE) expression_evaluate(tc, pos, &gex);
+		if( gv_preprocess_mode && result == TSV_X)
 			goto done;
 
 		/*
 		 *  Transformation on the condition of:
-		 *  1) #if 0
-		 *    #elif X --> #if   X
+		 *
+		 *  1) #if   0
+		 *     #elif X --> #if   X
+		 *
 		 *  2) #elif X
-		 *    #elif 1 --> #else
-		 *    #elif X --> #elif X
+		 *     #elif 1 --> #else
 		 */
-		if( current.if_value == IV_FALSE ) {
-			if(result == IV_UNKNOWN) {
+		if( eval_current_condition() == TSV_0 ) {
+			if(result == TSV_X) {
 				new_line = do_elif(1);
 				output = new_line.c_str();
 			} else
 				output = NULL;
-			current.if_value = current.curr_value = result;
-		} else if( current.if_value != IV_TRUE && current.elif_value != IV_TRUE ) {
-			if(result == IV_TRUE) {
+		} else {
+			if(result == TSV_1) {
 				new_line = do_elif(2);
 				output = new_line.c_str();
-			} else if(result == IV_FALSE)
+			} else if(result == TSV_0)
 				output = NULL;
-			current.elif_value = current.curr_value = result;
-		} else {
-			current.curr_value = IV_FALSE;
-			output = NULL;
 		}
+		upmost_chain()->enter_elif_branch(result);
+		goto save_current_block;
 		break;
+
 	case SSID_SHARP_ELSE:
-		if( under_false_conditional() )
+		if( eval_upper_condition(false) == TSV_0 )
 			goto done;
-		if( current.if_value == IV_TRUE || current.elif_value == IV_TRUE )
-			current.curr_value = IV_FALSE;
-		else
-			current.curr_value = (int8_t) ! ((IF_VALUE)current.curr_value);
-		if( current.if_value != IV_UNKNOWN || current.elif_value == IV_TRUE )
+		upmost_chain()->enter_else_branch();
+		if( eval_current_condition() != TSV_X )
 			output = NULL;
+save_current_block:
 		break;
+
 	case SSID_SHARP_ENDIF:
-		if( under_false_conditional() || current.if_value != IV_UNKNOWN)
+		CB_BEGIN
+		CConditionalChain *c;
+		if( ! upmost_chain()->keep_endif() )
 			output = NULL;
 		if( conditionals.size() == 0 ) {
 			gex = "Unmatched #endif";
 			goto done;
 		}
-		conditionals.pop(current);
+		conditionals.pop(c);
+		delete c;
+		CB_END
 		break;
 
 	default:
-		if(current.curr_value == IV_FALSE)
+		if(eval_current_condition() == TSV_0)
 			goto done;
-		if(current.curr_value == IV_UNKNOWN)
+		if(eval_current_condition() == TSV_X)
 			goto print_and_exit;
 
 		switch(preprocessor) {
@@ -881,7 +891,7 @@ handle_if_branch:
 			break;
 		  case SSID_SHARP_INCLUDE:
 		  case SSID_SHARP_INCLUDE_NEXT:
-			if( !gv_strict_mode )
+			if( gv_preprocess_mode )
 				do_include(preprocessor, pos, &output);
 			break;
 		  default:
@@ -900,8 +910,17 @@ print_and_exit:
 	if( out_fp != NULL && output != NULL )
 		fprintf(out_fp, "%s", output);
 done:
+
 	comment_start = -1;
-	return !gv_strict_mode ? (gex.GetError() == NULL) : true;
+	if(gv_preprocess_mode && gex.GetError()) {
+		TIncludedFile tmp;
+		while(included_files.size() > 0) {
+			included_files.pop(tmp);
+			fprintf(stderr, "**** %s\n", tmp.srcfile->name.c_str());
+		}
+		exit(2);
+	}
+	return gv_preprocess_mode ? (gex.GetError() == NULL) : true;
 }
 
 
@@ -911,11 +930,7 @@ void CYcpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx)
 	this->tc                = tc;
 	this->rtctx             = ctx;
 
-	current.if_value   = IV_TRUE;
-	current.elif_value = IV_UNKNOWN;
-	current.curr_value = IV_TRUE;
-
-	assert(include_levels.size() == 0);
+	assert(included_files.size() == 0);
 
 	raw_line.clear();
 	line.clear();
@@ -984,7 +999,7 @@ int CYcpp::ReadLine()
 		STAT_DQ_ESC,
 	} state;
 	int c;
-	CFile *file = current_file();
+	CFile *file = GetCurrentFile().srcfile;
 
 #if 0
 	if( strcmp(file->name.c_str(), "/usr/include/x86_64-linux-gnu/bits/types.h") == 0 && file->line == 120 )
@@ -1157,7 +1172,7 @@ bool CYcpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 			gex.format("Can not open include file \"%s\"", ifiles[i].c_str());
 			return false;
 		}
-		include_level_push(file, NULL, np, conditionals.size());
+		PushIncludedFile(file, NULL, np, conditionals.size());
 		if( ! RunEngine(1) )
 			return false;
 
@@ -1169,10 +1184,10 @@ bool CYcpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 
 bool CYcpp::RunEngine(size_t cond)
 {
-	if(include_levels.size() == cond)
+	if(included_files.size() == cond)
 		return true;
 
-	INCLUDE_LEVEL ilevel;
+	TIncludedFile ilevel;
 	while( 1 ) {
 		int rc ;
 		rc = ReadLine();
@@ -1180,7 +1195,7 @@ bool CYcpp::RunEngine(size_t cond)
 			if( ! SM_Run() )
 				return false;
 		} else if (rc == 0) {
-			ilevel = include_level_pop();
+			ilevel = PopIncludedFile();
 			/****
 			if(lvl.if_level != conditionals.size()) {
 				gex.format("Levels mismatched on %s, %zu %zu\n", lvl.srcfile->name.c_str(), lvl.if_level, conditionals.size());
@@ -1188,9 +1203,9 @@ bool CYcpp::RunEngine(size_t cond)
 			}
 			****/
 ///			if(infile != ilevel.srcfile )
-			if(include_levels.size() > 0)
+			if(included_files.size() > 0)
 				delete ilevel.srcfile;
-			if(include_levels.size() == cond)
+			if(included_files.size() == cond)
 				break;
 			num_preprocessors = ilevel.np;
 		} else
@@ -1281,7 +1296,7 @@ bool CYcpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 	if(has_dep_file())
 		AddDependency("", infile->name);
 
-	include_level_push(infile, out_fp, COUNT_OF(CYcpp::preprocessors), conditionals.size());
+	PushIncludedFile(infile, out_fp, COUNT_OF(CYcpp::preprocessors), conditionals.size());
 
 	if(ctx != NULL) {
 		GetCmdLineIncludeFiles(ctx->imacro_files, 2);
@@ -1300,13 +1315,13 @@ bool CYcpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 
 error:
 	if(!retval) {
-		if(include_levels.size() > 0)
-			errmsg.format("%s:%u:  %s\n%s\n", current_file()->name.c_str(), current_file()->line, raw_line.c_str(), gex.GetError());
+		if(included_files.size() > 0)
+			errmsg.format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), raw_line.c_str(), gex.GetError());
 		else
 			errmsg = gex.GetError();
-		INCLUDE_LEVEL ilevel;
-		while(include_levels.size() > 0) {
-			ilevel = include_level_pop();
+		TIncludedFile ilevel;
+		while(included_files.size() > 0) {
+			ilevel = PopIncludedFile();
 			if(infile != ilevel.srcfile)
 				delete ilevel.srcfile;
 		}

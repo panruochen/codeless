@@ -20,7 +20,6 @@
 
 #include "file.h"
 
-
 class CP_CONTEXT {
 private:
 	int    get_options(int argc, char *argv[], const char *short_options, const struct option *long_options);
@@ -77,6 +76,12 @@ public:
     inline void format(const char *fmt, ...);
 };
 
+/* Tri-State values */
+enum TRI_STATE {
+	TSV_0 = 0,
+	TSV_1 = 1,
+	TSV_X = 2,
+};
 
 class CYcpp {
 protected:
@@ -85,33 +90,64 @@ protected:
 	CP_CONTEXT   *rtctx;
 
 	/*-------------------------------------------------------------*/
-	struct CONDITIONAL {
-		int8_t  if_value;
-		int8_t  elif_value;
-		int8_t  curr_value;
+	class CConditionalChain {
+	private:
+		enum {
+			FG_TRUE_ON_IF    = 1,
+			FG_TRUE_ON_ELIF  = 2,
+			FG_HAS_X         = 4,
+
+			SG_ON_NONE       = 0,
+			SG_ON_IF         = 1,
+			SG_ON_ELIF       = 2,
+			SG_ON_ELSE       = 3,
+		};
+		TRI_STATE  value;
+		int flags;
+		int stage;
+
+	public:
+		/*-- For saving parsing results --*/
+		const char *filename;
+		size_t line;
+#if 0
+		struct TSubBlock {
+			uint32_t  begin;
+			bool      value;
+		};
+		CC_ARRAY<TSubBlock> branches;
+		uint32_t end;
+#endif
+		inline CConditionalChain();
+		inline void enter_if_branch(TRI_STATE value);
+		inline void enter_elif_branch(TRI_STATE value);
+		inline void enter_else_branch();
+		inline bool keep_endif();
+		inline TRI_STATE eval_condition();
 	};
-	CONDITIONAL            current;
-	CC_STACK<CONDITIONAL>  conditionals;
-	bool  current_state_pop();
-	bool  under_false_conditional();
+	inline CConditionalChain *upmost_chain() { return conditionals.size() == 0 ? NULL : conditionals.top(); }
+	CC_STACK<CConditionalChain*> conditionals;
+	TRI_STATE eval_current_condition();
+	TRI_STATE eval_upper_condition(bool on_if);
 
 	/*-------------------------------------------------------------*/
-	struct  INCLUDE_LEVEL {
+	struct  TIncludedFile {
 		CFile   *srcfile;
 		FILE    *outfp;
-		size_t   np;
-		size_t   if_level;
+		size_t   np; /* The number of preporcessors */
+		size_t   nh; /* The hierarchy number */
 
-		INCLUDE_LEVEL(CFile *s, FILE *of, size_t np, size_t ilevels)
-		{ srcfile = s; outfp = of; this->np = np; if_level=ilevels;}
-		INCLUDE_LEVEL()
-		{ srcfile = NULL; outfp = NULL; np = 0; if_level = 0; }
+		TIncludedFile(CFile *s, FILE *of, size_t np, size_t nh);
+		TIncludedFile();
 	};
-	CC_STACK<INCLUDE_LEVEL> include_levels;
+	CC_STACK<TIncludedFile> included_files;
 
-	inline CFile *current_file();
-	inline void include_level_push(CFile *srcfile, FILE *of, size_t np, size_t ilvl);
-	inline INCLUDE_LEVEL include_level_pop();
+	inline TIncludedFile& GetCurrentFile();
+	inline const CC_STRING& GetCurrentFileName();
+	inline const size_t GetCurrentLineNumber();
+
+	inline void PushIncludedFile(CFile *srcfile, FILE *of, size_t np, size_t nh);
+	inline TIncludedFile PopIncludedFile();
 
 	/*-------------------------------------------------------------*/
 	TCC_CONTEXT   *tc;
@@ -125,6 +161,7 @@ protected:
 	CC_STRING    line;     /* The comment-stripped line */
 	CC_STRING    raw_line; /* The original input line */
 	CC_STRING    new_line; /* The processed output line */
+
 
 	CC_STRING  do_elif(int mode);
 	void       do_define(const char *line);
@@ -143,14 +180,11 @@ protected:
 	inline bool has_dep_file();
 	bool check_file_processed(const CC_STRING& filename);
 
-	inline void mark_comment_start()
-	{ comment_start = raw_line.size() - 2; }
+	inline void mark_comment_start();
 
 public:
 	CC_STRING errmsg;
-	CYcpp() {
-		tc          = NULL;
-	}
+	inline CYcpp();
 	bool DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile  *infile, CP_CONTEXT *cp_ctx);
 };
 

@@ -229,7 +229,7 @@ int main(int argc, char *argv[])
 	if(!yctx.save_clfile.isnull())
 		save_command_line(yctx.save_clfile.c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
 
-	if( !gv_strict_mode ) {
+	if( gv_preprocess_mode ) {
 		if(yctx.cc.isnull())
 			fatal(4, "--yz-cc must be specified");
 		if(yctx.cc_path.isnull()) {

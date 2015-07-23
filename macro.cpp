@@ -548,7 +548,7 @@ void handle_undef(TCC_CONTEXT *tc, const char *line)
 	CToken token;
 
 	ReadToken(tc, &line, &token, &gEx, false);
-	if( gv_strict_mode )
+	if( ! gv_preprocess_mode )
 		tc->maMap.Put(token.id, CMacro::NotDef);
 	else {
 		CMacro *ma = tc->maMap.Lookup(token.id);
