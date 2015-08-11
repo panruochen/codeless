@@ -134,6 +134,8 @@ final_commands += '\n'
 
 print final_commands
 
+open("/tmp/ycpp.json",'w').close()
+
 sp = subprocess.Popen(final_commands, shell=True, executable='/bin/bash')
 sp.wait()
 if sp.returncode :

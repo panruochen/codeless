@@ -556,6 +556,107 @@ error:
 	return gv_preprocess_mode ? TSV_0 : TSV_X;
 }
 
+/*----------------------------------------------------------------------------------*/
+
+
+void CYcpp::TIncludedFile::CWalkThrough::enter_conditional(TCond *c, bool value)
+{
+	TListEntry *i, *j;
+
+	if(method == MED_BF && on_conditional_callback)
+		on_conditional_callback(context, c, value);
+	for(i = c->sub_chains.next; i != &c->sub_chains; i = j) {
+		j = i->next;
+		enter_conditional_chain((TCondChain*)i);
+	}
+	if(method == MED_DF && on_conditional_callback)
+		on_conditional_callback(context, c, value);
+}
+
+void CYcpp::TIncludedFile::CWalkThrough::enter_conditional_chain(TCondChain *cc)
+{
+	TListEntry *i, *j;
+
+	if(method == MED_BF && on_conditional_chain_callback)
+		on_conditional_chain_callback(context, cc);
+	for(i = cc->chain.next; i != &cc->chain; i = j) {
+		j = i->next;
+		TCond *c = (TCond*)i;
+		enter_conditional(c, c == cc->true_cond);
+	}
+	if(method == MED_DF && on_conditional_chain_callback)
+		on_conditional_chain_callback(context, cc);
+}
+
+CYcpp::TIncludedFile::CWalkThrough::CWalkThrough(TCond *rc, WT_METHOD method_,
+	ON_CONDITIONAL_CHAIN_CALLBACK callback1, ON_CONDITIONAL_CALLBACK callback2, void *context_ )
+{
+	method    = method_;
+	context   = context_;
+	on_conditional_chain_callback = callback1;
+	on_conditional_callback = callback2;
+	enter_conditional(rc, true);
+}
+
+void CYcpp::TIncludedFile::delete_conditional(void *context, TCond *c, bool value)
+{
+//	assert(c->end != INV_LN);
+	if(c->end == INV_LN) {
+		fprintf(stderr, "On line %zu, file: %s\n", c->begin, dv_current_file);
+		assert(0);
+	}
+	delete c;
+}
+
+void CYcpp::TIncludedFile::delete_conditional_chain(void *context, TCondChain *cc)
+{
+	delete cc;
+}
+
+
+void CYcpp::TIncludedFile::drop_conditional(void *context, TCond *c, bool value)
+{
+}
+
+void CYcpp::TIncludedFile::drop_conditional_chain(void *context, TCondChain *cc)
+{
+}
+
+void CYcpp::TIncludedFile::save_conditional_to_json(TCond *c, bool value)
+{
+	CC_STRING tmp;
+	static const char *directives[] = {NULL, "if", "elif", "else"};
+
+	assert(c->type <= TCond::CT_ELSE);
+	if(directives[c->type]) {
+		tmp.format("\t\t\"%s\" : [%s, %u, %u]\n", directives[c->type], (value ? "true" : "false"), c->begin, c->end);
+		json_text += tmp;
+	}
+}
+
+void CYcpp::TIncludedFile::save_conditional_to_json(void *context, TCond *c, bool value)
+{
+	((TIncludedFile*)context)->save_conditional_to_json(c, value);
+}
+
+void CYcpp::TIncludedFile::get_json_text()
+{
+	if(!virtual_root->sub_chains.IsEmpty()) {
+		json_text  = "\t\"";
+		json_text += ifile->name;
+		json_text += "\" : {\n";
+		CWalkThrough(virtual_root, CWalkThrough::MED_BF, NULL, save_conditional_to_json, this);
+		json_text += "\t},\n";
+	}
+}
+
+CYcpp::TIncludedFile::~TIncludedFile()
+{
+	CWalkThrough(virtual_root, CWalkThrough::MED_DF, drop_conditional_chain, drop_conditional, NULL);
+	CWalkThrough(virtual_root, CWalkThrough::MED_DF, delete_conditional_chain, delete_conditional, NULL);
+	delete ifile;
+}
+
 const char *CYcpp::preprocessors[] = {
 	"#define", "#undef",
 	"#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif",
@@ -659,7 +760,7 @@ void CYcpp::do_define(const char *line)
 
 CFile *CYcpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf)
 {
-	bool in_sys_dir, quoted;
+	bool in_sys_dir, quoted = true;
 	CC_STRING ifpath, itoken, iline;
 	uint8_t filetype;
 	CFile *retval = NULL;
@@ -757,7 +858,7 @@ bool CYcpp::do_include(sym_t preprocessor, const char *line, const char **output
 
 bool CYcpp::SM_Run()
 {
-	FILE *out_fp = included_files.top().outfp;
+	FILE *out_fp = included_files.top()->ofile;
 	const char *pos;
 	TRI_STATE result = TSV_0;
 	const char *output = raw_line.c_str();
@@ -809,18 +910,21 @@ handle_if_branch:
 
 		conditionals.push(new CConditionalChain());
 
-		upmost_chain()->enter_if_branch(result);
-		upmost_chain()->filename = dv_current_file;
-		upmost_chain()->line = dv_current_line;
+		upper_chain()->enter_if_branch(result);
+		upper_chain()->filename = dv_current_file;
+		upper_chain()->line = dv_current_line;
 		if(eval_current_condition() != TSV_X)
 			output = NULL;
+
+		included_files.top()->add_if(dv_current_line, result);
 		break;
 
 	case SSID_SHARP_ELIF:
+		included_files.top()->add_elif(dv_current_line, result);
 		if( eval_upper_condition(false) == TSV_0 )
 			goto done;
 		if(  eval_current_condition() == TSV_1 ) {
-			upmost_chain()->enter_elif_branch(TSV_0);
+			upper_chain()->enter_elif_branch(TSV_0);
 			goto done;
 		}
 		result = (TRI_STATE) expression_evaluate(tc, pos, &gex);
@@ -849,14 +953,15 @@ handle_if_branch:
 			} else if(result == TSV_0)
 				output = NULL;
 		}
-		upmost_chain()->enter_elif_branch(result);
+		upper_chain()->enter_elif_branch(result);
 		goto save_current_block;
 		break;
 
 	case SSID_SHARP_ELSE:
+		included_files.top()->add_else(dv_current_line, result);
 		if( eval_upper_condition(false) == TSV_0 )
 			goto done;
-		upmost_chain()->enter_else_branch();
+		upper_chain()->enter_else_branch();
 		if( eval_current_condition() != TSV_X )
 			output = NULL;
 save_current_block:
@@ -864,8 +969,9 @@ save_current_block:
 
 	case SSID_SHARP_ENDIF:
 		CB_BEGIN
+		included_files.top()->add_endif(dv_current_line);
 		CConditionalChain *c;
-		if( ! upmost_chain()->keep_endif() )
+		if( ! upper_chain()->keep_endif() )
 			output = NULL;
 		if( conditionals.size() == 0 ) {
 			gex = "Unmatched #endif";
@@ -913,10 +1019,10 @@ done:
 
 	comment_start = -1;
 	if(gv_preprocess_mode && gex.GetError()) {
-		TIncludedFile tmp;
+		TIncludedFile *tmp;
 		while(included_files.size() > 0) {
 			included_files.pop(tmp);
-			fprintf(stderr, "**** %s\n", tmp.srcfile->name.c_str());
+			fprintf(stderr, "**** %s\n", tmp->ifile->name.c_str());
 		}
 		exit(2);
 	}
@@ -999,7 +1105,7 @@ int CYcpp::ReadLine()
 		STAT_DQ_ESC,
 	} state;
 	int c;
-	CFile *file = GetCurrentFile().srcfile;
+	CFile *file = GetCurrentFile().ifile;
 
 #if 0
 	if( strcmp(file->name.c_str(), "/usr/include/x86_64-linux-gnu/bits/types.h") == 0 && file->line == 120 )
@@ -1187,7 +1293,6 @@ bool CYcpp::RunEngine(size_t cond)
 	if(included_files.size() == cond)
 		return true;
 
-	TIncludedFile ilevel;
 	while( 1 ) {
 		int rc ;
 		rc = ReadLine();
@@ -1195,19 +1300,17 @@ bool CYcpp::RunEngine(size_t cond)
 			if( ! SM_Run() )
 				return false;
 		} else if (rc == 0) {
-			ilevel = PopIncludedFile();
-			/****
-			if(lvl.if_level != conditionals.size()) {
-				gex.format("Levels mismatched on %s, %zu %zu\n", lvl.srcfile->name.c_str(), lvl.if_level, conditionals.size());
-				goto error;
+			TIncludedFile *ifile = PopIncludedFile();
+			if(included_files.size() > 0) {
+				if(!json_file.isnull()) {
+					ifile->get_json_text();
+					fol_append(json_file, ifile->json_text.c_str(), ifile->json_text.size());
+				}
+				delete ifile;
 			}
-			****/
-///			if(infile != ilevel.srcfile )
-			if(included_files.size() > 0)
-				delete ilevel.srcfile;
 			if(included_files.size() == cond)
 				break;
-			num_preprocessors = ilevel.np;
+			num_preprocessors = ifile->np;
 		} else
 			return false;
 		raw_line.clear();
@@ -1297,6 +1400,7 @@ bool CYcpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_
 		AddDependency("", infile->name);
 
 	PushIncludedFile(infile, out_fp, COUNT_OF(CYcpp::preprocessors), conditionals.size());
+	json_file = "/tmp/ycpp.json";
 
 	if(ctx != NULL) {
 		GetCmdLineIncludeFiles(ctx->imacro_files, 2);
@@ -1319,11 +1423,11 @@ error:
 			errmsg.format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), raw_line.c_str(), gex.GetError());
 		else
 			errmsg = gex.GetError();
-		TIncludedFile ilevel;
+		TIncludedFile *ilevel;
 		while(included_files.size() > 0) {
 			ilevel = PopIncludedFile();
-			if(infile != ilevel.srcfile)
-				delete ilevel.srcfile;
+			if(infile != ilevel->ifile)
+				delete ilevel;
 		}
 	}
 

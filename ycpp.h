@@ -18,7 +18,12 @@
 
 #define __NO_USE__   __attribute__((__unused__))
 
+#define offset_of(type, member) ((unsigned long)(&((type*)0)->member))
+#define container_of(ptr, type, member)  ((type*)((unsigned long)(ptr) - offset_of(type,member)))
+
 #include "file.h"
+
+#define INV_LN           0xFFFFEEFF
 
 class CP_CONTEXT {
 private:
@@ -125,29 +130,132 @@ protected:
 		inline bool keep_endif();
 		inline TRI_STATE eval_condition();
 	};
-	inline CConditionalChain *upmost_chain() { return conditionals.size() == 0 ? NULL : conditionals.top(); }
+	inline CConditionalChain *upper_chain() { return conditionals.size() == 0 ? NULL : conditionals.top(); }
 	CC_STACK<CConditionalChain*> conditionals;
 	TRI_STATE eval_current_condition();
 	TRI_STATE eval_upper_condition(bool on_if);
 
 	/*-------------------------------------------------------------*/
-	struct  TIncludedFile {
-		CFile   *srcfile;
-		FILE    *outfp;
-		size_t   np; /* The number of preporcessors */
-		size_t   nh; /* The hierarchy number */
+	class  TIncludedFile {
+		class TListEntry {
+		public:
+			void Init();
+			void AddTail(TListEntry *entry);
+			bool IsEmpty();
+			TListEntry *last();
+		private:
+			TListEntry *next;
+			TListEntry *prev;
+			void AddAfter(TListEntry *pos, TListEntry *entry);
+			friend class TIncludedFile;
+		};
+
+		class TCondChain;
+
+		class TCond {
+		private:
+			TListEntry link;
+			enum COND_TYPE {
+				CT_ROOT = 0,
+				CT_IF   = 1,
+				CT_ELIF = 2,
+				CT_ELSE = 3,
+			};
+			const COND_TYPE type;
+			const size_t begin;
+			size_t       end;
+			TListEntry   sub_chains; /* subordinate chains */
+
+		public:
+			TCond(TCondChain *cc, COND_TYPE ctype, size_t ln);
+			void append(TCondChain *cc);
+			TCondChain *superior();
+
+			friend class TCondChain;
+			friend class TIncludedFile;
+		};
+
+		class TCondChain {
+		private:
+			TListEntry  link;
+			TListEntry  chain; /* The conditional chain */
+			size_t      begin;
+			size_t      end; /* The end line number */
+			TCond      *true_cond;
+			TCond      *superior;
+
+		public:
+			TCondChain();
+			void mark_end(size_t);
+			void add_if(TCond *, bool);
+			void add_elif(TCond*, bool);
+			void add_else(TCond*, bool);
+			void add_endif(size_t);
+
+			friend class TCond;
+			friend class TIncludedFile;
+		};
+
+		typedef void (*ON_CONDITIONAL_CALLBACK)(void *, TCond *, bool);
+		typedef void (*ON_CONDITIONAL_CHAIN_CALLBACK)(void *, TCondChain *);
+
+		class CWalkThrough {
+		public:
+			enum WT_METHOD {
+				MED_BF, /* breadth-first */
+				MED_DF, /* depth-first   */
+			};
+		private:
+			enum WT_METHOD method;
+			void *context;
+			ON_CONDITIONAL_CALLBACK       on_conditional_callback;
+			ON_CONDITIONAL_CHAIN_CALLBACK on_conditional_chain_callback;
+			void enter_conditional(TCond *c, bool);
+			void enter_conditional_chain(TCondChain *cc);
+		public:
+			CWalkThrough(TCond *rc, WT_METHOD method, ON_CONDITIONAL_CHAIN_CALLBACK callback1, ON_CONDITIONAL_CALLBACK callback2, void *context);
+		};
+
+		size_t   nh; /* The hierarchy number of including */
+
+		TCond *virtual_root;
+		TCond *cursor;
+		bool under_false();
+
+		static void drop_conditional(void *, TCond *c, bool);
+		static void drop_conditional_chain(void *, TCondChain *cc);
+
+		static void delete_conditional(void *, TCond *, bool);
+		static void delete_conditional_chain(void *, TCondChain *);
+
+		static void save_conditional_to_json(void *, TCond *, bool);
+		static void save_conditional_chain_to_json(void *, TCondChain *);
+
+		void save_conditional_to_json(TCond *, bool);
+		void save_conditional_chain_to_json(TCondChain *);
+
+	public:
+		CFile   *ifile; /* Source File */
+		FILE    *ofile; /* Dest File   */
+		size_t   np;    /* The number of preporcessors */
+		CC_STRING json_text;
 
 		TIncludedFile(CFile *s, FILE *of, size_t np, size_t nh);
-		TIncludedFile();
+		~TIncludedFile();
+		void add_if(size_t line_nr, bool value);    // #if
+		void add_elif(size_t line_nr, bool value);  // #elif
+		void add_else(size_t line_nr, bool value);  // #else
+		void add_endif(size_t line_nr);             // #endif
+		void get_json_text();
 	};
-	CC_STACK<TIncludedFile> included_files;
+	CC_STACK<TIncludedFile*> included_files;
 
 	inline TIncludedFile& GetCurrentFile();
 	inline const CC_STRING& GetCurrentFileName();
 	inline const size_t GetCurrentLineNumber();
 
 	inline void PushIncludedFile(CFile *srcfile, FILE *of, size_t np, size_t nh);
-	inline TIncludedFile PopIncludedFile();
+	inline TIncludedFile *PopIncludedFile();
 
 	/*-------------------------------------------------------------*/
 	TCC_CONTEXT   *tc;
@@ -161,6 +269,8 @@ protected:
 	CC_STRING    line;     /* The comment-stripped line */
 	CC_STRING    raw_line; /* The original input line */
 	CC_STRING    new_line; /* The processed output line */
+
+	CC_STRING   json_file;
 
 
 	CC_STRING  do_elif(int mode);

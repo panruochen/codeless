@@ -34,7 +34,7 @@ void log(LOG_VERB verb, const char *format, ...)
     char *buf, __buf0[1024];
     va_list ap;
     size_t n;
-    int rc;
+	int rc;
 
     if((unsigned long)verb < (unsigned long)verb_gate)
         return;
@@ -54,6 +54,7 @@ void log(LOG_VERB verb, const char *format, ...)
     }
 
     rc = write(log_fd, buf, n);
+	(void) rc;
     if(buf != __buf0)
         free(buf);
 }
