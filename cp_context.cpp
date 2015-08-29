@@ -115,6 +115,7 @@ enum {
 	C_OPTION_SAVE_COMMAND_LINE,
 	C_OPTION_SAVE_BYPASS,
 	C_OPTION_SAVE_DEPENDENCY,
+	C_OPTION_SAVE_CONDITIONAL_RESULTS,
 	C_OPTION_IN_PLACE,
 	C_OPTION_CC,
 	C_OPTION_CC_PATH,
@@ -184,18 +185,22 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 			source_files.push_back(optarg);
 			break;
 		case C_OPTION_SAVE_COMMAND_LINE:
-			save_clfile = optarg;
+			of_cl = optarg;
 			save_my_args();
 			break;
 		case C_OPTION_SAVE_BYPASS:
-			save_byfile = optarg;
+			of_by = optarg;
 			save_my_args();
 			break;
 		case C_OPTION_SAVE_DEPENDENCY:
 			if(optarg != NULL)
-				save_depfile = optarg;
+				of_dep = optarg;
 			else
-				save_depfile = '\x1';
+				of_dep = '\x1';
+			save_my_args();
+			break;
+		case C_OPTION_SAVE_CONDITIONAL_RESULTS:
+			of_con = optarg;
 			save_my_args();
 			break;
 		case C_OPTION_IN_PLACE:
@@ -296,16 +301,17 @@ void __NO_USE__ dump_args(int argc, char *argv[]);
 int CP_CONTEXT::get_options(int argc, char *argv[])
 {
 	static const struct option long_options[] = {
-		{"yz-save-command-line",  1, 0, C_OPTION_SAVE_COMMAND_LINE },
-		{"yz-save-bypass",        1, 0, C_OPTION_SAVE_BYPASS },
-		{"yz-save-dependency",    2, 0, C_OPTION_SAVE_DEPENDENCY },
-		{"yz-in-place",           2, 0, C_OPTION_IN_PLACE },
-		{"yz-cc",                 1, 0, C_OPTION_CC },
-		{"yz-cc-path",            1, 0, C_OPTION_CC_PATH },
-		{"yz-cleaner-mode",       0, 0, C_OPTION_CLEANER_MODE },
-		{"yz-bypass",             1, 0, C_OPTION_BYPASS },
-		{"yz-import-bypass",      1, 0, C_OPTION_IMPORT_BYPASS },
-		{"yz-verbose",            1, 0, C_OPTION_VERBOSE },
+		{"yz-save-command-line",        1, 0, C_OPTION_SAVE_COMMAND_LINE },
+		{"yz-save-bypass",              1, 0, C_OPTION_SAVE_BYPASS },
+		{"yz-save-dependency",          2, 0, C_OPTION_SAVE_DEPENDENCY },
+		{"yz-save-conditional-results", 1, 0, C_OPTION_SAVE_CONDITIONAL_RESULTS },
+		{"yz-in-place",                 2, 0, C_OPTION_IN_PLACE },
+		{"yz-cc",                       1, 0, C_OPTION_CC },
+		{"yz-cc-path",                  1, 0, C_OPTION_CC_PATH },
+		{"yz-cleaner-mode",             0, 0, C_OPTION_CLEANER_MODE },
+		{"yz-bypass",                   1, 0, C_OPTION_BYPASS },
+		{"yz-import-bypass",            1, 0, C_OPTION_IMPORT_BYPASS },
+		{"yz-verbose",                  1, 0, C_OPTION_VERBOSE },
 		{"include",  1, 0, C_OPTION_INCLUDE},
 		{"imacros",  1, 0, C_OPTION_IMACROS},
 		{"isystem",  1, 0, C_OPTION_ISYSTEM},

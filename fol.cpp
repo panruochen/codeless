@@ -177,107 +177,6 @@ CC_STRING fol_dirname(const CC_STRING& path)
 }
 
 
-#define IS_DIR_DELIM(c)   ((c) == '/' || (c) == '\\')
-#define UNIX_DD    '/'
-#define DOS_DD     '\\'
-
-static char *__stdpath_uplevel(const char *const path, char *pos)
-{
-	int nd = 0;
-	while(pos >= path) {
-		const char c = *pos;
-		if( IS_DIR_DELIM(c) ) {
-			nd++;
-			if(nd == 2)
-				return pos + 1;
-		}
-		pos --;
-	}
-	return NULL;
-}
-
-#define  HAVE_TRAILING_SPLASH  0
-CC_STRING fol_realpath(const CC_STRING& src)
-{
-    char dest[4096];
-	const char *s;
-	char *d;
-	int state = 0;
-
-	if( src[0] != '/' ) {
-		(void) getcwd(dest, sizeof(dest));
-		d = dest + strlen(dest);
-		*d ++ = '/';
-	} else
-		d = dest;
-	s = src.c_str();
-	while(1) {
-		const char c = *s++;
-		switch(state) {
-		case 0:
-			switch(c) {
-			case '\0':    *d = c; state = 1; break;
-			case UNIX_DD:
-			case DOS_DD:  *d++ = c; state = 3; break;
-			case '.':     *d++ = c; state = 4; break;
-			default:      *d++ = c; break;
-			}
-			break;
-		case 1:
-			#if !HAVE_TRAILING_SPLASH
-				if( *(d-1) == UNIX_DD )
-					*--d   = '\0';
-			#else
-				if( *(d-1) != UNIX_DD )
-					*d++ = UNIX_DD, *d = '\0';
-			#endif
-			goto done;
-		case 2:	goto fail;
-		case 3:
-			switch(c) {
-			case '\0':    *d = c; state = 1; break;
-			case UNIX_DD:
-			case DOS_DD:  break;
-			case '.':     *d++ = c; state = 4; break;
-			default:      *d++ = c; state = 0; break;
-			}
-			break;
-		case 4:
-			switch(c) {
-			case '\0':    *d = c; state = 1; break;
-			case UNIX_DD:
-			case DOS_DD:  state = 3; d -= 1; break;
-			case '.':     *d++ = c; state = 5; break;
-			default:      *d++ = c; state = 0; break;
-			}
-			break;
-		case 5:
-			switch(c) {
-			case '\0':    state = 1; goto uplevel;
-			case UNIX_DD:
-			case DOS_DD:  state = 3;
-				{
-					char *t;
-				uplevel:
-					t = __stdpath_uplevel(dest, d);
-					if(t == NULL)
-						goto fail;
-					d = t;
-					if(c == '\0') *d = '\0';
-					break;
-				}
-			default:      state = 2; break;
-			}
-			break;
-		}
-	}
-done:
-	return dest;
-fail:
-	return CC_STRING("");
-}
-
-
 int fol_copy_with_parent(const CC_STRING& src, const CC_STRING& dst)
 {
 	CC_STRING ddir;
@@ -293,4 +192,16 @@ int fol_copy_with_parent(const CC_STRING& src, const CC_STRING& dst)
 	}
 	return fol_copy(src, dst);
 }
+
+
+#include "y_realpath.h"
+CC_STRING fol_realpath(const CC_STRING& src)
+{
+    char dest[4096];
+
+	if( ! y_realpath(dest, sizeof(dest), src.c_str()) )
+		return CC_STRING("");
+	return CC_STRING(dest);
+}
+
 

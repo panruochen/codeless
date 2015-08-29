@@ -43,7 +43,7 @@ inline void CException::format(const char *fmt, ...)
 	va_end(ap);
 }
 
-inline CYcpp::TIncludedFile& CYcpp::GetCurrentFile()
+inline CYcpp::CIncludedFile& CYcpp::GetCurrentFile()
 {  return *included_files.top(); }
 
 inline const CC_STRING& CYcpp::GetCurrentFileName()
@@ -52,22 +52,21 @@ inline const CC_STRING& CYcpp::GetCurrentFileName()
 inline const size_t CYcpp::GetCurrentLineNumber()
 {  return included_files.top()->ifile->line; }
 
-inline void CYcpp::PushIncludedFile(CFile *srcfile, FILE *of, size_t np, size_t nh)
+inline void CYcpp::PushIncludedFile(CFile *srcfile, FILE *of, size_t np, bool in_compiler_dir, size_t nh)
 {
-	included_files.push(new CYcpp::TIncludedFile(srcfile, of, np, nh));
+	included_files.push(new CYcpp::CIncludedFile(srcfile, of, np, in_compiler_dir, nh));
 }
 
-
-inline CYcpp::TIncludedFile *CYcpp::PopIncludedFile()
+inline CYcpp::CIncludedFile *CYcpp::PopIncludedFile()
 {
-	CYcpp::TIncludedFile *ifile = NULL;
+	CYcpp::CIncludedFile *ifile = NULL;
 	included_files.pop(ifile);
 	return ifile;
 }
 
 inline bool CYcpp::has_dep_file(void)
 {
-	return rtctx && rtctx->save_depfile.size() != 0;
+	return rtctx && rtctx->of_dep.size() != 0;
 }
 
 inline CYcpp::CConditionalChain::CConditionalChain()
@@ -109,7 +108,7 @@ inline void CYcpp::CConditionalChain::enter_elif_branch(TRI_STATE v)
 	stage = SG_ON_ELIF;
 }
 
-inline void CYcpp::CConditionalChain::enter_else_branch()
+inline TRI_STATE CYcpp::CConditionalChain::enter_else_branch()
 {
 	if( flags & (FG_TRUE_ON_IF|FG_TRUE_ON_ELIF) )
 		value = TSV_0;
@@ -118,6 +117,7 @@ inline void CYcpp::CConditionalChain::enter_else_branch()
 	else
 		value = TSV_X;
 	stage = SG_ON_ELSE;
+	return value;
 }
 
 inline bool CYcpp::CConditionalChain::keep_endif()
@@ -136,16 +136,20 @@ inline TRI_STATE CYcpp::eval_current_condition()
 	return conditionals.size() == 0 ? TSV_1 : conditionals.top()->eval_condition();
 }
 
+inline CYcpp::CConditionalChain *CYcpp::upper_chain()
+{
+	return conditionals.size() == 0 ? NULL : conditionals.top();
+}
 
-inline void CYcpp::TIncludedFile::TListEntry::Init()
+inline void CYcpp::CIncludedFile::CListEntry::Init()
 {
 	prev = this;
 	next = this;
 }
 
-inline void CYcpp::TIncludedFile::TListEntry::AddAfter(TListEntry *x, TListEntry *y)
+inline void CYcpp::CIncludedFile::CListEntry::AddAfter(CListEntry *x, CListEntry *y)
 {
-	CYcpp::TIncludedFile::TListEntry *z = x->next;
+	CYcpp::CIncludedFile::CListEntry *z = x->next;
 
 	x->next = y;
 	y->prev = x;
@@ -153,17 +157,17 @@ inline void CYcpp::TIncludedFile::TListEntry::AddAfter(TListEntry *x, TListEntry
 	z->prev = y;
 }
 
-inline bool CYcpp::TIncludedFile::TListEntry::IsEmpty()
+inline bool CYcpp::CIncludedFile::CListEntry::IsEmpty()
 {
 	return this == prev;
 }
 
-inline CYcpp::TIncludedFile::TListEntry *CYcpp::TIncludedFile::TListEntry::last()
+inline CYcpp::CIncludedFile::CListEntry *CYcpp::CIncludedFile::CListEntry::last()
 {
 	return prev;
 }
 
-inline void CYcpp::TIncludedFile::TListEntry::AddTail(TListEntry *entry)
+inline void CYcpp::CIncludedFile::CListEntry::AddTail(CListEntry *entry)
 {
 	AddAfter(prev, entry);
 }
@@ -178,140 +182,143 @@ inline CYcpp::CYcpp()
 	tc = NULL;
 }
 
-inline void CYcpp::TIncludedFile::TCond::append(TCondChain *cc)
+inline void CYcpp::CIncludedFile::CCond::append(CCondChain *cc)
 {
 	sub_chains.AddTail(&cc->link);
 	cc->superior = this;
 }
 
-inline CYcpp::TIncludedFile::TCond::TCond(TCondChain *superior, TCond::COND_TYPE _type, size_t ln) :
-	type(_type), begin(ln)
+inline CYcpp::CIncludedFile::CCond::CCond(CCondChain *head_, CCond::COND_TYPE type_, bool value_, uint32_t line_) :
+	type(type_), begin(line_)
 {
+#if SANITY_CHECK
+	memcpy(tag, TAG, sizeof(TAG));
+#endif
+	value = value_;
 	sub_chains.Init();
 	end = INV_LN;
+	head = head_;
 }
 
-/*
- * +------------------------------------- +
- * |                                      |
- * +-> *----*     *----*         *----*   |
- *     |    |     |    |         |    |   |
- *     |    |     |    |         |    |   |
- *     |    | --> |    | ... --> |    | --+
- *     *----*     *----*         *----*
- */
-inline CYcpp::TIncludedFile::TCondChain *CYcpp::TIncludedFile::TCond::superior()
+inline void CYcpp::CIncludedFile::CCond::sanity_check()
 {
-	TListEntry *head = link.next;
-	/* The head exactly points to the _chain_ member within the struct `TCondChain' */
-	return container_of(head, TCondChain, chain);
+#if SANITY_CHECK
+	assert(memcmp(tag, TAG, sizeof(TAG)) == 0);
+#endif
 }
 
-inline CYcpp::TIncludedFile::TCondChain::TCondChain()
+inline CYcpp::CIncludedFile::CCondChain::CCondChain()
 {
+#if SANITY_CHECK
+	memcpy(tag, TAG, sizeof(TAG));
+#endif
 	chain.Init();
-	true_cond = NULL;
 	superior  = NULL;
 }
 
-inline void CYcpp::TIncludedFile::TCondChain::mark_end(size_t line_nr)
+inline void CYcpp::CIncludedFile::CCondChain::sanity_check()
 {
-	TCond *c = (TCond*)chain.last();
+#if SANITY_CHECK
+	assert(memcmp(tag, TAG, sizeof(TAG)) == 0);
+#endif
+}
+
+inline void CYcpp::CIncludedFile::CCondChain::mark_end(size_t line_nr)
+{
+	CCond *c = container_of(chain.last(), CCond, link);
+	c->sanity_check();
 	c->end = line_nr;
 }
 
-inline void CYcpp::TIncludedFile::TCondChain::add_if(TCond *c, bool cv)
+inline void CYcpp::CIncludedFile::CCondChain::add_if(CCond *c, bool cv)
 {
 	begin = c->begin;
 	chain.AddTail(&c->link);
-	if(cv)
-		true_cond = c;
+	(void) cv;
 }
 
-inline void CYcpp::TIncludedFile::TCondChain::add_elif(TCond *c, bool cv)
+inline void CYcpp::CIncludedFile::CCondChain::add_elif(CCond *c, bool cv)
 {
 	mark_end(c->begin);
 	chain.AddTail(&c->link);
-	if(cv)
-		true_cond = c;
+	(void) cv;
 }
 
-inline void CYcpp::TIncludedFile::TCondChain::add_else(TCond *c, bool cv)
+inline void CYcpp::CIncludedFile::CCondChain::add_else(CCond *c, bool cv)
 {
 	mark_end(c->begin);
 	chain.AddTail(&c->link);
-	if(cv)
-		true_cond = c;
+	(void) cv;
 }
 
-inline void CYcpp::TIncludedFile::TCondChain::add_endif(size_t line_nr)
+inline void CYcpp::CIncludedFile::CCondChain::add_endif(size_t line_nr)
 {
+	line_nr += 1;
 	mark_end(line_nr);
 	end = line_nr;
 }
 
-inline void CYcpp::TIncludedFile::add_if(size_t line_nr, bool value)
+
+inline void CYcpp::CIncludedFile::add_if(bool value)
 {
-	if(under_false())
-		value = false;
-	TCondChain *cc = new TCondChain();
-	TCond *c = new TCond(cc, TCond::CT_IF, line_nr);
+	if(false_level > 0 || !cursor->value) {
+		false_level++;
+		return;
+	}
+	CCondChain *cc = new CCondChain();
+	CCond *c = new CCond(cc, CCond::CT_IF, value, ifile->line);
 	cursor->append(cc);
 	cc->add_if(c, value);
+	assert(cursor == c->head->superior);
 	cursor = c;
 }
 
-inline void CYcpp::TIncludedFile::add_elif(size_t line_nr, bool value)
+inline void CYcpp::CIncludedFile::add_elif(bool value)
 {
-	if(under_false())
-		value = false;
-	TCondChain *cc = cursor->superior();
-	TCond *c = new TCond(cc, TCond::CT_ELIF, line_nr);
+	if(false_level)
+		return;
+	CCondChain *cc = cursor->head;
+	CCond *c = new CCond(cc, CCond::CT_ELIF, value, ifile->line);
 	cc->add_elif(c, value);
 	cursor = c;
 }
 
-inline void CYcpp::TIncludedFile::add_else(size_t line_nr, bool value)
+inline void CYcpp::CIncludedFile::add_else(bool value)
 {
-	if(under_false())
-		value = false;
-	TCondChain *cc = cursor->superior();
-	TCond *c = new TCond(cc, TCond::CT_ELSE, line_nr);
+//	DBG_TRAP2(strstr(ifile->name.c_str(), "/asm/elf.h"), value);
+	if(false_level)
+		return;
+	CCondChain *cc = cursor->head;
+	CCond *c = new CCond(cc, CCond::CT_ELSE, value, ifile->line);
 	cc->add_else(c, value);
 	cursor = c;
 }
 
-inline void CYcpp::TIncludedFile::add_endif(size_t line_nr)
+inline void CYcpp::CIncludedFile::add_endif()
 {
-#if 0
-	if( strstr(ifile->name.c_str(), "config_defaults.h") && ifile->line == 27 )
-	{
-		volatile int loop = 1;
-		do {} while (loop);
+	if(false_level > 0) {
+		false_level--;
+		return;
 	}
-#endif
-
-	cursor->superior()->add_endif(line_nr);
-
-	TCondChain *cc = cursor->superior();
+	CCondChain *cc = cursor->head;
+	cc->add_endif(ifile->line);
+#if SANITY_CHECK
 	assert(!cc->chain.IsEmpty());
-	cursor = (TCond*)cc->superior;
+#endif
+	cursor = cc->superior;
 }
 
-inline CYcpp::TIncludedFile::TIncludedFile(CFile *_ifile, FILE *_ofile, size_t _np, size_t _nh)
+inline CYcpp::CIncludedFile::CIncludedFile(CFile *ifile_, FILE *ofile_, size_t np_, bool in_compiler_dir_, size_t nh_)
 {
-	ifile = _ifile;
-	ofile = _ofile;
-	np    = _np;
-	nh    = _nh;
-	virtual_root = new TCond(NULL, TCond::CT_ROOT, 0);
+	ifile = ifile_;
+	ofile = ofile_;
+	np    = np_;
+	nh    = nh_;
+	in_compiler_dir = in_compiler_dir_;
+	virtual_root = new CCond(NULL, CCond::CT_ROOT, true, 0);
 	virtual_root->end = 0;
 	cursor = virtual_root;
-}
-
-inline bool CYcpp::TIncludedFile::under_false()
-{
-	return !(cursor == virtual_root || cursor->superior()->true_cond);
+	false_level = 0;
 }
 
 #endif

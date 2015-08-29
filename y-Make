@@ -17,6 +17,7 @@ YZ_BY_FILE          = None
 YZ_IMP_BYFILE       = None
 YZ_SHELL            = None
 YZ_BYPASS           = ""
+YZ_CONDVAL          = None
 
 def do_execp(cmd, errors='abort') :
     sp = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -46,7 +47,7 @@ def to_abs_path(x) :
 
 short_options = ''
 long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', "yz-save-dependency=", 'yz-save-cl=', 'yz-save-command-line=',
-    'yz-shell=', 'yz-bypass=', "yz-save-bypass=", "yz-import-bypass="])
+    'yz-shell=', 'yz-bypass=', "yz-save-bypass=", "yz-import-bypass=", "yz-save-conditional-results="])
 
 a, make_args = cu_lib.collect_options(short_options, long_options, sys.argv[1:])
 
@@ -82,6 +83,8 @@ for o, a in opts:
         YZ_SHELL = a
     elif o == 'bypass' :
         YZ_BYPASS += ' --yz-bypass=' + a
+    elif o == 'save-conditional-results':
+        YZ_CONDVAL = to_abs_path(a)
 
 if YZ_PXCC == None:
     YZ_PXCC = to_abs_path(os.path.dirname(sys.argv[0]) + "/ycpp.exe")
@@ -105,6 +108,9 @@ if YZ_IMP_BYFILE is not None :
     my_args += ' --yz-import-bypass=' + YZ_IMP_BYFILE
 if YZ_BYPASS :
     my_args += YZ_BYPASS
+if YZ_CONDVAL :
+    open(YZ_CONDVAL,"w").close()
+    my_args += ' --yz-save-conditional-results=' + YZ_CONDVAL
 
 final_commands  = 'function ' + YZ_CC + '()\n{\n    '
 final_commands += YZ_PXCC + my_args
@@ -134,10 +140,9 @@ final_commands += '\n'
 
 print final_commands
 
-open("/tmp/ycpp.json",'w').close()
-
 sp = subprocess.Popen(final_commands, shell=True, executable='/bin/bash')
 sp.wait()
+
 if sp.returncode :
     print >>sys.stderr, "yMake got error %d" % sp.returncode
 

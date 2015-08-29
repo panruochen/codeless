@@ -1,6 +1,6 @@
-EXTRA_CFLAGS    := -ggdb #-O3
+EXTRA_CFLAGS    := -ggdb -O3
 EXTRA_CFLAGS    += -Wall -Wno-unused-result #-Wno-format
-DEFINES         :=
+DEFINES         := -DSANITY_CHECK
 SRCS            := ./ ./support/
 INCS            := $(SRCS)
 TARGET_TYPE     := EXE
