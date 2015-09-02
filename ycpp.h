@@ -21,7 +21,7 @@
 #define offset_of(type, member) ((unsigned long)(&((type*)0)->member))
 #define container_of(ptr, type, member)  ((type*)((unsigned long)(ptr) - offset_of(type,member)))
 
-#define DBG_TRAP2(cond1, cond2)                   \
+#define GDB_TRAP2(cond1, cond2)                   \
 do {                                              \
 	if( (cond1) && (cond2) )   {                  \
 		volatile int loop = 1;                    \
@@ -103,7 +103,7 @@ class CYcpp {
 protected:
 	static const char *preprocessors[];
 	size_t       num_preprocessors;
-	CP_CONTEXT   *rtctx;
+	CP_CONTEXT   *rtc;
 
 	/*-------------------------------------------------------------*/
 	class CConditionalChain {
@@ -128,19 +128,22 @@ protected:
 		size_t line;
 
 		inline CConditionalChain();
-		inline void enter_if_branch(TRI_STATE value);
-		inline void enter_elif_branch(TRI_STATE value);
-		inline TRI_STATE enter_else_branch();
+		inline void enter_if(TRI_STATE value);
+		inline void enter_elif(TRI_STATE value);
+		inline TRI_STATE enter_else();
 		inline bool keep_endif();
+		inline bool has_true();
 		inline TRI_STATE eval_condition();
 	};
 	CConditionalChain *upper_chain();
 	CC_STACK<CConditionalChain*> conditionals;
-	TRI_STATE eval_current_condition();
-	TRI_STATE eval_upper_condition(bool on_if);
+	TRI_STATE eval_current_conditional();
+	TRI_STATE superior_conditional_value(bool on_if);
 
 	/*-------------------------------------------------------------*/
 	class CIncludedFile {
+		typedef uint32_t linenum_t;
+
 		class CListEntry {
 		public:
 			void Init();
@@ -169,15 +172,16 @@ protected:
 #if SANITY_CHECK
 			char tag[4];
 			static const char TAG[4];
+			const char *filename;
 #endif
 			const COND_TYPE type;
-			const uint32_t begin;
-			uint32_t end;
+			const linenum_t begin;
+			linenum_t end;
 			bool value;
 			CListEntry sub_chains; /* subordinate chains */
 
 		public:
-			CCond(CCondChain *cc, COND_TYPE ctype, bool value, uint32_t ln);
+			CCond(CCondChain *cc, COND_TYPE ctype, bool value, uint32_t ln, const char *filename);
 			void append(CCondChain *cc);
 			void sanity_check();
 
@@ -199,18 +203,18 @@ protected:
 
 		public:
 			CCondChain();
-			void mark_end(size_t);
-			void add_if(CCond *, bool);
-			void add_elif(CCond*, bool);
-			void add_else(CCond*, bool);
-			void add_endif(size_t);
+			void mark_end(linenum_t);
+			void add_if(CCond *);
+			void add_elif(CCond*);
+			void add_else(CCond*);
+			void add_endif(linenum_t);
 			void sanity_check();
 
 			friend class CCond;
 			friend class CIncludedFile;
 		};
 
-		typedef void (*ON_CONDITIONAL_CALLBACK)(void *, CCond *);
+		typedef void (*ON_CONDITIONAL_CALLBACK)(void *, CCond *, int);
 		typedef void (*ON_CONDITIONAL_CHAIN_CALLBACK)(void *, CCondChain *);
 
 		class CWalkThrough {
@@ -222,12 +226,14 @@ protected:
 		private:
 			enum WT_METHOD method;
 			void *context;
+			int  rh; /* Recursive hierarchy */
 			ON_CONDITIONAL_CALLBACK       on_conditional_callback;
 			ON_CONDITIONAL_CHAIN_CALLBACK on_conditional_chain_callback;
 			void enter_conditional(CCond *c);
 			void enter_conditional_chain(CCondChain *cc);
+			void dump_and_exit(CCondChain *cc, const char *msg);
 		public:
-			CWalkThrough(CCond *rc, WT_METHOD method, ON_CONDITIONAL_CHAIN_CALLBACK callback1, ON_CONDITIONAL_CALLBACK callback2, void *context);
+			CWalkThrough(CCond*, WT_METHOD, ON_CONDITIONAL_CHAIN_CALLBACK, ON_CONDITIONAL_CALLBACK, void *);
 		};
 
 		size_t   nh; /* The hierarchy number of including */
@@ -236,21 +242,18 @@ protected:
 		CCond *cursor;
 		uint32_t false_level;
 
-		static void delete_conditional(void *, CCond *);
+		static void delete_conditional(void *, CCond *, int);
 		static void delete_conditional_chain(void *, CCondChain *);
 
-		static void save_conditional_to_json(void *, CCond *);
-		static void save_conditional_chain_to_json(void *, CCondChain *);
-
-		void save_conditional_to_json(CCond *);
-		void save_conditional_chain_to_json(CCondChain *);
+		static void save_conditional(void *, CCond *, int);
+		void save_conditional(CCond *, int);
 
 	public:
 		CFile   *ifile; /* Source File */
 		FILE    *ofile; /* Dest File   */
 		size_t   np;    /* The number of preporcessors */
 		bool     in_compiler_dir; /* The included file is inside the compiler root directory. */
-		CC_STRING json_text;
+		CC_STRING cr_text;
 
 		CIncludedFile(CFile *s, FILE *of, size_t np, bool in_compiler_dir, size_t nh);
 		~CIncludedFile();
@@ -258,7 +261,7 @@ protected:
 		void add_elif(bool value);  // #elif
 		void add_else(bool value);  // #else
 		void add_endif();           // #endif
-		void get_json_text();
+		void produce_cr_text();
 	};
 	CC_STACK<CIncludedFile*> included_files;
 

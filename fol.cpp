@@ -194,7 +194,7 @@ int fol_copy_with_parent(const CC_STRING& src, const CC_STRING& dst)
 }
 
 
-#include "y_realpath.h"
+#include "realpath.h"
 CC_STRING fol_realpath(const CC_STRING& src)
 {
     char dest[4096];

@@ -23,8 +23,14 @@ function prepare()
 		ft="$f-configured"
 		if [ -f ${ft}.${suffix} ]; then
 			f=${ft}
+			tar xfj $f.${suffix}
+		else
+			tar xfj $f.${suffix}
+			cd $f
+			./configure
+			cd ..
+			tar cfj $ft.$suffix $f
 		fi
-		tar xfj $f.${suffix}
 	)
 	HAVE_CONFIGURED=y
 }
