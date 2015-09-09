@@ -51,11 +51,11 @@ cast_exp		: unary_exp
 unary_exp		: postfix_exp
 			| unary_operator cast_exp
 			;
-unary_operator		: '&' | '~' | '!'
+unary_operator		:  '~' | '!'
 			;
 postfix_exp		: primary_exp
 			;
-primary_exp		: 
+primary_exp		:
 			| const
 			| '(' exp ')'
 			;

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-#  Reparse the conditional evalution results and keep each file unique.
+#  Reparse the conditional-value file and keep each file unique.
 #
 
 import sys, os
@@ -15,15 +15,16 @@ def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
 
 def hash_key(begin, end) :
-    return (end * 0x100000000) + begin;
+    a = begin.split(',')
+    return (int(end) * 0x100000000) + int(a[0])
 
 class CConditional :
     def __init__(self) :
         self.type  = None
-        self.begin = -1
-        self.end   = -1
         self.value = TS_X
-        self.level = -1
+        self.begin = None
+        self.end   = None
+        self.level = None
 
 class CHFile :
     def __init__(self) :
@@ -36,18 +37,18 @@ class CHFile :
     def proc_conditional(self, line) :
         fx = line.split()
         new_cc = CConditional()
-        new_cc.level = int(fx[0])
+        new_cc.level = fx[0]
         new_cc.type  = fx[1]
         new_cc.value = str2bool(fx[2])
-        new_cc.begin = int(fx[3])
-        new_cc.end   = int(fx[4])
+        new_cc.begin = fx[3]
+        new_cc.end   = fx[4]
         hkey = hash_key(new_cc.begin, new_cc.end)
         if hkey in self.conds :
             old_cc = self.conds[hkey]
             if old_cc.level != new_cc.level or old_cc.begin != new_cc.begin or old_cc.end != new_cc.end or old_cc.type != new_cc.type :
                 print >>sys.stderr, "Mismatch on \"%s\"" % self.filename
-                print >>sys.stderr, "  [%2u] %s %u %u %u" % (old_cc.level, old_cc.type, old_cc.value, old_cc.begin, old_cc.end)
-                print >>sys.stderr, "  [%2u] %s %u %u %u" % (new_cc.level, new_cc.type, new_cc.value, new_cc.begin, new_cc.end)
+                print >>sys.stderr, "  [%2s] %s %u %s %s" % (old_cc.level, old_cc.type, old_cc.value, old_cc.begin, old_cc.end)
+                print >>sys.stderr, "  [%2s] %s %u %s %s" % (new_cc.level, new_cc.type, new_cc.value, new_cc.begin, new_cc.end)
                 exit(1)
             if old_cc.value != new_cc.value :
                 self.conds[hkey].value = TS_X
@@ -88,7 +89,7 @@ else :
 for name in hfiles :
     print >> ofile, name
     for cc in hfiles[name].conds.values() :
-        print >> ofile, "  %2u %-4s %2d %7u %7u" % (cc.level, cc.type, cc.value, cc.begin, cc.end)
+        print >> ofile, "  %2s %-4s %2d %7s %7s" % (cc.level, cc.type, cc.value, cc.begin, cc.end)
 
 if options.output is not None :
     ofile.close()

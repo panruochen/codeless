@@ -7,6 +7,8 @@ def ext_get(args) :
         z = x[::-1]
         if z.find('ppc.') == 0 or z.find('cc.') == 0 or z.find('xxc.') == 0 :
             return 'c++'
+        if z.find('S.') == 0 :
+            return 'assembler-with-cpp'
     return 'c'
 
 def cmd_exec(command):

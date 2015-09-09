@@ -63,4 +63,21 @@
 "ERROR"
 #endif
 
+#if !+1
+"ERROR"
+#else
+"OK"
+#endif
 
+#if !-1
+"ERROR"
+#else
+"OK"
+#endif
+
+# define CRC_LE_BITS 64
+# define CRC_BE_BITS 64
+#if CRC_LE_BITS > 64 || CRC_LE_BITS < 1 || CRC_LE_BITS == 16 || \
+    CRC_LE_BITS & CRC_LE_BITS-1
+# error "CRC_LE_BITS must be one of {1, 2, 4, 8, 32, 64}"
+#endif

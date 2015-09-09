@@ -12,16 +12,15 @@
 #include <fcntl.h>
 #include <semaphore.h>
 
-#include "ycpp.h"
+#include "codeless.h"
 #include "utils.h"
-
-
 
 static bool check_prev_operator(sym_t id)
 {
 	switch(id) {
 		case  SSID_LOGIC_OR:
 		case  SSID_LOGIC_AND:
+		case  SSID_LOGIC_NOT:
 		case  SSID_BITWISE_OR:
 		case  SSID_BITWISE_XOR:
 		case  SSID_BITWISE_AND:
@@ -332,8 +331,8 @@ static bool contain(const CC_ARRAY<CC_STRING>& hints, const CC_STRING& line)
 
 static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *gex)
 {
+	static const char opp[] = { '=', '>', '<', 'X'};
 	const char *saved_line = line;
-	bool dflag = false;
 	enum {
 		STAT_INIT,
 		STAT_OPR1,
@@ -346,6 +345,7 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 	CC_STACK<sym_t>  opr_stack;
 	CC_STACK<CToken>  opnd_stack;
 	sym_t last_opr = SSID_SHARP;
+	CToken last_token;
 	char sign;
 	const char *symbol = NULL;
 	LOG_VERB dml = LOGV_DEBUG;
@@ -353,27 +353,16 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 	CException ex2;
 
 	skip_blanks(saved_line);
-	dflag = contain(dx_traced_lines, line);
-	if(dflag)
-		log(LOGV_RUNTIME, "RAW: %s\n", line);
 
 	expansion = ExpandLine(tc, false, line, gex);
 	if(gex->GetError() != NULL) {
-		if(dflag) {
-			log(LOGV_RUNTIME, "*Error* %s\n");
-		}
 		return TSV_X;
 	}
 
 	line = expansion.c_str();
-	if(dflag) {
-		log(LOGV_RUNTIME, "EXP: %s\n", line);
-		dml = LOGV_RUNTIME;
-	}
-
 	opr_stack.push(SSID_SHARP);
 	log(dml, "PUSH OPR: #\n");
-	sign = '\0';
+	sign = 0;
 	state = STAT_OPR1;
 	while(1) {
 		sym_t  opr;
@@ -386,6 +375,20 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 			goto error;
 		if( token.attr == CToken::TA_CHAR )
 			token.attr = CToken::TA_INT;
+		if( sign != 0 ) {
+			if(token.attr != CToken::TA_UINT) {
+				gex->format("%s following %c", TR(tc,token.id), sign);
+				goto error;
+			}
+			if(sign == '-') {
+				token.attr = CToken::TA_INT;
+				token.i32_val = -token.i32_val;
+			}
+			sign = 0;
+		} else if( (token.id == SSID_ADDITION || token.id == SSID_SUBTRACTION) &&  check_prev_operator(last_opr)) {
+			sign = token.id == SSID_ADDITION ? '+' : '-';
+			goto next;
+		}
 
 		switch(state) {
 		case STAT_INIT:
@@ -466,15 +469,9 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 			sym_t opr0;
 			int result;
 again:
-			if(state == STAT_OPR2 && check_prev_operator(last_opr) &&
-				(opr == SSID_ADDITION || opr == SSID_SUBTRACTION)) {
-				if(opr == SSID_SUBTRACTION)
-					sign = '-';
-				continue;
-			}
-
 			opr0 = opr_stack.top();
 			result = tc->opMap.Compare(opr0, opr);
+			log(dml, "Compare: %s %c %s\n", TR(tc,opr0),opp[result],TR(tc,opr));
 			switch(result) {
 			case OP_EQUAL:
 				opr_stack.pop(opr0);
@@ -486,7 +483,6 @@ again:
 					goto error;
 				}
 				goto again;
-				break;
 			case OP_LOWER:
 				opr_stack.push(opr);
 				break;
@@ -496,16 +492,10 @@ again:
 				goto error;
 			}
 		} else {
-
-			if( sign == '-' && token.attr == CToken::TA_UINT ) {
-				token.attr = CToken::TA_INT;
-				token.i32_val = - token.i32_val;
-			}
 			opnd_stack.push(token);
 		}
 
 	next:
-		sign = 0;
 		last_opr = opr;
 	}
 
@@ -516,6 +506,7 @@ again:
 		if( ! opr_stack.pop(opr0) )
 			goto error;
 		result = tc->opMap.Compare(opr0, SSID_SHARP);
+		log(dml, "Compare: %s %c #\n", TR(tc,opr0),opp[result]);
 		switch(result) {
 		case OP_EQUAL:
 			break;
@@ -557,11 +548,11 @@ error:
 /*----------------------------------------------------------------------------------*/
 
 #if SANITY_CHECK
-const char CYcpp::CIncludedFile::CCond::TAG[4] = "C\x0\x1";
-const char CYcpp::CIncludedFile::CCondChain::TAG[4] = "CC\x0";
+const char CCodeLess::CIncludedFile::CCond::TAG[4] = "C\x0\x1";
+const char CCodeLess::CIncludedFile::CCondChain::TAG[4] = "CC\x0";
 #endif
 
-void CYcpp::CIncludedFile::CWalkThrough::enter_conditional(CCond *c)
+void CCodeLess::CIncludedFile::CWalkThrough::enter_conditional(CCond *c)
 {
 	CListEntry *i, *j;
 
@@ -578,7 +569,7 @@ void CYcpp::CIncludedFile::CWalkThrough::enter_conditional(CCond *c)
 }
 
 
-void CYcpp::CIncludedFile::CWalkThrough::dump_and_exit(CCondChain *cc, const char *msg)
+void CCodeLess::CIncludedFile::CWalkThrough::dump_and_exit(CCondChain *cc, const char *msg)
 {
 	CListEntry *i;
 	for(i = cc->chain.next; i != &cc->chain; i = i->next) {
@@ -589,7 +580,7 @@ void CYcpp::CIncludedFile::CWalkThrough::dump_and_exit(CCondChain *cc, const cha
 	exit(1);
 }
 
-void CYcpp::CIncludedFile::CWalkThrough::enter_conditional_chain(CCondChain *cc)
+void CCodeLess::CIncludedFile::CWalkThrough::enter_conditional_chain(CCondChain *cc)
 {
 	CListEntry *i, *j;
 #if SANITY_CHECK
@@ -622,7 +613,7 @@ void CYcpp::CIncludedFile::CWalkThrough::enter_conditional_chain(CCondChain *cc)
 		on_conditional_chain_callback(context, cc);
 }
 
-CYcpp::CIncludedFile::CWalkThrough::CWalkThrough(CCond *rc, WT_METHOD method_,
+CCodeLess::CIncludedFile::CWalkThrough::CWalkThrough(CCond *rc, WT_METHOD method_,
 	ON_CONDITIONAL_CHAIN_CALLBACK callback1, ON_CONDITIONAL_CALLBACK callback2, void *context_ )
 {
 	method    = method_;
@@ -633,7 +624,7 @@ CYcpp::CIncludedFile::CWalkThrough::CWalkThrough(CCond *rc, WT_METHOD method_,
 	enter_conditional(rc);
 }
 
-void CYcpp::CIncludedFile::delete_conditional(void *context, CCond *c, int rh)
+void CCodeLess::CIncludedFile::delete_conditional(void *context, CCond *c, int rh)
 {
 #if SANITY_CHECK
 	if(c->end == INV_LN) {
@@ -646,30 +637,33 @@ void CYcpp::CIncludedFile::delete_conditional(void *context, CCond *c, int rh)
 	delete c;
 }
 
-void CYcpp::CIncludedFile::delete_conditional_chain(void *context, CCondChain *cc)
+void CCodeLess::CIncludedFile::delete_conditional_chain(void *context, CCondChain *cc)
 {
 	(void)context;
 	delete cc;
 }
 
-void CYcpp::CIncludedFile::save_conditional(CCond *c, int rh)
+void CCodeLess::CIncludedFile::save_conditional(CCond *c, int rh)
 {
 	CC_STRING tmp;
 	static const char *directives[] = {NULL, "if", "elif", "else"};
 
 	assert(c->type <= CCond::CT_ELSE);
 	if(directives[c->type]) {
-		tmp.format("  %-4u %s %s %u %u\n", rh, directives[c->type], (c->value ? "true" : "false"), c->begin, c->end);
+		if(c->boff)
+			tmp.format("  %-4u %s %s %u,%d %u\n", rh, directives[c->type], (c->value ? "true" : "false"), c->begin, c->boff, c->end);
+		else
+			tmp.format("  %-4u %s %s %u %u\n", rh, directives[c->type], (c->value ? "true" : "false"), c->begin, c->end);
 		cr_text += tmp;
 	}
 }
 
-void CYcpp::CIncludedFile::save_conditional(void *context, CCond *c, int rh)
+void CCodeLess::CIncludedFile::save_conditional(void *context, CCond *c, int rh)
 {
 	((CIncludedFile*)context)->save_conditional(c, rh);
 }
 
-void CYcpp::CIncludedFile::produce_cr_text()
+void CCodeLess::CIncludedFile::produce_cr_text()
 {
 	if(!virtual_root->sub_chains.IsEmpty()) {
 		CC_STRING apath;
@@ -680,19 +674,19 @@ void CYcpp::CIncludedFile::produce_cr_text()
 	}
 }
 
-CYcpp::CIncludedFile::~CIncludedFile()
+CCodeLess::CIncludedFile::~CIncludedFile()
 {
 	CWalkThrough(virtual_root, CWalkThrough::MED_DF, delete_conditional_chain, delete_conditional, NULL);
 	delete ifile;
 }
 
-const char *CYcpp::preprocessors[] = {
+const char *CCodeLess::preprocessors[] = {
 	"#define", "#undef",
 	"#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif",
 	"#include", "#include_next"
 };
 
-TRI_STATE CYcpp::superior_conditional_value(bool on_if)
+TRI_STATE CCodeLess::superior_conditional_value(bool on_if)
 {
 	const size_t n = on_if ? 0 : 1;
 	CConditionalChain **top;
@@ -700,7 +694,7 @@ TRI_STATE CYcpp::superior_conditional_value(bool on_if)
 	return conditionals.size() == n ? TSV_1 : (top = &(conditionals.top()) - n, (*top)->eval_condition());
 }
 
-CC_STRING CYcpp::do_elif(int mode)
+CC_STRING CCodeLess::do_elif(int mode)
 {
 	CC_STRING output;
 	CC_STRING trailing;
@@ -730,7 +724,7 @@ CC_STRING CYcpp::do_elif(int mode)
 }
 
 
-void CYcpp::AddDependency(const char *prefix, const CC_STRING& filename)
+void CCodeLess::AddDependency(const char *prefix, const CC_STRING& filename)
 {
 	CC_STRING rp;
 
@@ -759,7 +753,7 @@ static CC_STRING MakeSemaName(const CC_STRING& filename)
 }
 
 
-void CYcpp::do_define(const char *line)
+void CCodeLess::do_define(const char *line)
 {
 	const char *p;
 	CC_STRING word;
@@ -784,11 +778,10 @@ void CYcpp::do_define(const char *line)
 	}
 }
 
-CFile *CYcpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf, bool& in_compiler_dir)
+CFile *CCodeLess::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf, bool& in_compiler_dir)
 {
 	bool quoted = true;
 	CC_STRING ifpath, itoken, iline;
-	uint8_t filetype;
 	CFile *retval = NULL;
 
 	iline = ExpandLine(tc, true, line, &gex);
@@ -808,48 +801,8 @@ CFile *CYcpp::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf,
 		goto done;
 	}
 
-	filetype = check_source_type(ifpath);
-	if( ! in_compiler_dir ) {
-		if(filetype == SOURCE_TYPE_C || filetype == SOURCE_TYPE_CPP) {
-			CC_STRING cifile, cipath, bakfile, suffix;
-			CC_STRING semname;
-			sem_t *sem;
-			CC_STRING dir = fol_dirname(ifpath);
-			int retval __NO_USE__ = -1;
-
-			for(unsigned int i = 0; ; i++) {
-				if(i == 0)
-					suffix = ".c_include";
-				else
-					suffix.format(".c_include%u", i);
-				cifile = itoken + suffix;
-				cipath = ifpath + suffix;
-				if( ! fol_exist(cipath) )
-					break;
-			}
-			bakfile = ifpath + baksuffix;
-			iline = CC_STRING("#include ") + (quoted ? '"' : '<') + cifile + (quoted ? '"' : '>') + '\n';
-			*outf = NULL;
-			semname = MakeSemaName(GetCurrentFileName());
-			sem = sem_open(semname.c_str(), O_CREAT, 0666, 1);
-			sem_wait(sem);
-
-			if( ! fol_exist(bakfile) )
-				retval = fol_copy(ifpath, cipath);
-			else
-				retval = fol_copy(bakfile, cipath);
-			sem_post(sem);
-			sem_unlink(semname.c_str());
-			if(retval < 0) {
-				gex.format("Cannot create %s", cipath.c_str());
-				goto done;
-			}
-			ifpath += suffix;
-		}
-	}
-
 	CRealFile *file;
-	new_line = (iline.isnull() ?  raw_line : iline);
+	new_line = raw_line;
 	file = new CRealFile;
 	file->SetFileName(ifpath);
 	retval = file;
@@ -862,7 +815,7 @@ done:
 }
 
 
-bool CYcpp::do_include(sym_t preprocessor, const char *line, const char **output)
+bool CCodeLess::do_include(sym_t preprocessor, const char *line, const char **output)
 {
 	FILE *outf;
 	CFile *file;
@@ -872,7 +825,7 @@ bool CYcpp::do_include(sym_t preprocessor, const char *line, const char **output
 	if( file == NULL )
 		return false;
 	if(file->Open()) {
-		PushIncludedFile(file, NULL, COUNT_OF(CYcpp::preprocessors), in_compiler_dir, conditionals.size());
+		PushIncludedFile(file, NULL, COUNT_OF(CCodeLess::preprocessors), in_compiler_dir, conditionals.size());
 	} else {
 		gex.format("Cannot open `%s'", file->name.c_str());
 		return false;
@@ -882,7 +835,7 @@ bool CYcpp::do_include(sym_t preprocessor, const char *line, const char **output
 	return true;
 }
 
-bool CYcpp::SM_Run()
+bool CCodeLess::SM_Run()
 {
 	FILE *out_fp = included_files.top()->ofile;
 	const char *pos;
@@ -897,7 +850,7 @@ bool CYcpp::SM_Run()
 	dv_current_file = GetCurrentFileName().c_str();
 	dv_current_line = GetCurrentLineNumber();
 
-//	GDB_TRAP2(strstr(dv_current_file,"bits/wordsize.h"), (dv_current_line==3||dv_current_line==6));
+//	GDB_TRAP2(strstr(dv_current_file,"lib/memset.S"), (dv_current_line==31));
 	switch(preprocessor) {
 	case SSID_SHARP_IF:
 		if( superior_conditional_value(true) != TSV_0 )
@@ -1033,16 +986,20 @@ done:
 	comment_start = -1;
 	if(gv_preprocess_mode && gex.GetError()) {
 		CIncludedFile *tmp;
+		CC_STRING pmsg, ts;
 		while(included_files.size() > 0) {
 			included_files.pop(tmp);
-			fprintf(stderr, "**** %s\n", tmp->ifile->name.c_str());
+			ts.format("  %s:%u\n", tmp->ifile->name.c_str(), tmp->ifile->line);
+			pmsg += ts;
 		}
+		if( !pmsg.isnull() )
+			gex.AddPrefix(pmsg);
 	}
 	return gv_preprocess_mode ? (gex.GetError() == NULL) : true;
 }
 
 
-void CYcpp::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx)
+void CCodeLess::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx)
 {
 	this->num_preprocessors = num_preprocessors;
 	this->tc                = tc;
@@ -1073,7 +1030,7 @@ static inline int get_sign(const CToken& token)
 	return 0;
 }
 
-sym_t CYcpp::GetPreprocessor(const char *line, const char **pos)
+sym_t CCodeLess::GetPreprocessor(const char *line, const char **pos)
 {
 	const char *p;
 	CC_STRING word;
@@ -1101,7 +1058,7 @@ sym_t CYcpp::GetPreprocessor(const char *line, const char **pos)
 //
 // Read and unfold one semantic line from the source file, stripping off any coments.
 //
-int CYcpp::ReadLine()
+int CCodeLess::ReadLine()
 {
 	enum {
 		STAT_INIT,
@@ -1117,6 +1074,7 @@ int CYcpp::ReadLine()
 		STAT_DQ_ESC,
 	} state;
 	int c;
+	int foldcnt = 0;
 	CFile *file = GetCurrentFile().ifile;
 
 	state = STAT_INIT;
@@ -1154,6 +1112,10 @@ int CYcpp::ReadLine()
 			case '\'':
 				state = STAT_SQ;
 				break;
+			default:
+				if(rtc && c == rtc->as_lc_char)
+					state = STAT_LC;
+				break;
 			}
 			break;
 
@@ -1188,6 +1150,8 @@ int CYcpp::ReadLine()
 		case STAT_BC: /* block comments */
 			if(c == '*')
 				state = STAT_ASTERISK;
+			if(c == '\n')
+				foldcnt++;
 			break;
 
 		case STAT_ASTERISK: /* asterisk */
@@ -1203,6 +1167,8 @@ int CYcpp::ReadLine()
 			if(c == '\t' || c == ' ')
 				;
 			else {
+				if(c == '\n')
+					foldcnt++;
 				state = STAT_INIT;
 				continue;
 			}
@@ -1248,20 +1214,13 @@ handle_last_line:
 				break;
 		}
 	}
+	if(file->name.find("gen_probe.c") >= 0 && foldcnt)
+		fprintf(stderr, "%zu %d\n", file->line, -foldcnt);
+	file->offset = -foldcnt;
 	return 1;
 }
 
-bool CYcpp::check_file_processed(const CC_STRING& filename)
-{
-	CC_STRING bakfile;
-
-	bakfile = filename + baksuffix;
-	if( ! fol_exist(bakfile) )
-		return false;
-	return true;
-}
-
-bool CYcpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
+bool CCodeLess::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 {
 	if( ifiles.size() == 0)
 		return true;
@@ -1292,26 +1251,25 @@ bool CYcpp::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 	return true;
 }
 
-bool CYcpp::RunEngine(size_t cond)
+bool CCodeLess::RunEngine(size_t cond)
 {
 	if(included_files.size() == cond)
 		return true;
 
-	while( 1 ) {
+	while(1) {
 		int rc ;
 		rc = ReadLine();
-		if( rc > 0 ) {
-			if( ! SM_Run() )
+		if(rc > 0) {
+			if(!SM_Run())
 				return false;
 		} else if (rc == 0) {
 			CIncludedFile *ifile = PopIncludedFile();
-			if(included_files.size() > 0) {
-				if(!rtc->of_con.isnull() && ! ifile->in_compiler_dir ) {
-					ifile->produce_cr_text();
-					fol_append(rtc->of_con, ifile->cr_text.c_str(), ifile->cr_text.size());
-				}
-				delete ifile;
+			if(!ifile->in_compiler_dir && rtc && !rtc->of_con.isnull()) {
+				ifile->produce_cr_text();
+				fol_append(rtc->of_con, ifile->cr_text.c_str(), ifile->cr_text.size());
 			}
+			if(included_files.size() > 0)
+				delete ifile;
 			if(included_files.size() == cond)
 				break;
 			num_preprocessors = ifile->np;
@@ -1329,81 +1287,67 @@ bool CYcpp::RunEngine(size_t cond)
  *
  *  Returns a pointer to the error messages on failure, or nil on success.
  */
-bool CYcpp::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
+bool CCodeLess::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
 {
-	bool bypass;
+	bool ignored;
 	FILE *out_fp;
 	bool retval = false;
-	char tmp_outfile[64] = { 0 };
-	CC_STRING bakfile;
+	CC_STRING bak_fname, out_fname;
 	struct stat    stb;
 	struct utimbuf utb;
 
-	if( check_file_processed(infile->name) && ! ctx->of_by.isnull() ) {
-		CC_STRING tmp = infile->name + '\n';
-		fol_append(ctx->of_by, tmp.c_str(), tmp.size());
-	}
-
 	if(ctx) {
-		bypass = ctx->check_if_bypass(infile->name);
-		if( bypass && ! has_dep_file() )
+		ignored = ctx->check_ignore(infile->name);
+		if( ignored && ! has_dep_file() )
 			return true;
 	} else
-		bypass = false;
-
-	/**
-	if(ctx)
-		fprintf(stdout, "** %s\n", infile->name.c_str());
-	if( strstr(infile->name.c_str(), "boot-common.c") ) {
-		fprintf(stderr, "bypass_list has %u elements\n", ctx->bypass_list.size());
-		fprintf(stderr, "cmp '%s' against '%s'\n", infile->name.c_str(), ctx->bypass_list[0].c_str());
-		fprintf(stderr, "bypass %u\n", bypass);
-		exit(2);
-	}
-	**/
+		ignored = false;
 
 	if( stat(infile->name, &stb) == 0 ) {
 		utb.actime  = stb.st_atime;
 		utb.modtime = stb.st_mtime;
 	}
 	if( ! infile->Open() ) {
-		log(LOGV_RUNTIME, "Cannot open \"%s\" for reading\n");
+		gex.format("Cannot open \"%s\" for reading\n");
 		return false;
 	}
 
 	out_fp = NULL;
-	baksuffix.clear();
 
-	if(ctx != NULL ) {
-		if( ! ctx->baksuffix.isnull() && ctx->baksuffix[0] != '\0' ) {
-			bakfile   = infile->name + ctx->baksuffix;
-			baksuffix = ctx->baksuffix;
-		}
-		if( ctx->outfile.isnull() || bypass )
-			out_fp = NULL;
-		else if( IS_STDOUT(ctx->outfile) )
+	if(ctx != NULL && ctx->outfile != CP_CONTEXT::OF_NULL ) {
+		if( ctx->outfile == CP_CONTEXT::OF_STDOUT )
 			out_fp = stdout;
 		else {
+#if SANITY_CHECK
+			assert( ! ctx->baksuffix.isnull() );
+#endif
+			if( ctx->baksuffix[0] != CP_CONTEXT::MAGIC_CHAR )
+				bak_fname = infile->name + ctx->baksuffix;
+			else
+				out_fname = infile->name;
+
 			int fd;
-			strcpy(tmp_outfile, "#yccp-XXXXXX");
+			char tmp_outfile[32];
+			strcpy(tmp_outfile, "@cl@-XXXXXX");
 			fd = mkstemp(tmp_outfile);
 			if( fd < 0 ) {
-				log(LOGV_RUNTIME, "Cannot open \"%s\" for writing\n", ctx->outfile.c_str());
+				gex.format("Cannot open \"%s\" for writing\n", tmp_outfile);
 				infile->Close();
 				return false;
 			}
 			out_fp = fdopen(fd, "wb");
+			out_fname = tmp_outfile;
 		}
 	}
 
-	if( num_preprocessors >= COUNT_OF(CYcpp::preprocessors) )
-		num_preprocessors  = COUNT_OF(CYcpp::preprocessors);
+	if( num_preprocessors >= COUNT_OF(CCodeLess::preprocessors) )
+		num_preprocessors  = COUNT_OF(CCodeLess::preprocessors);
 	Reset(tc, num_preprocessors, ctx);
 
 	if(has_dep_file())
 		AddDependency("", infile->name);
 
-	PushIncludedFile(infile, out_fp, COUNT_OF(CYcpp::preprocessors), false, conditionals.size());
+	PushIncludedFile(infile, out_fp, COUNT_OF(CCodeLess::preprocessors), false, conditionals.size());
 
 	if(ctx != NULL) {
 		GetCmdLineIncludeFiles(ctx->imacro_files, 2);
@@ -1437,7 +1381,7 @@ error:
 	if(out_fp != NULL && out_fp != stdout)
 		fclose(out_fp);
 
-	if( retval && ctx != NULL && ! bypass ) {
+	if( retval && ctx != NULL && ! ignored ) {
 		CC_STRING semname;
 		sem_t *sem;
 
@@ -1445,15 +1389,17 @@ error:
 		sem = sem_open(semname.c_str(), O_CREAT, 0666, 1);
 		sem_wait(sem);
 
-		if( ! bakfile.isnull() )
-			rename(infile->name, bakfile);
-		rename(tmp_outfile, ctx->outfile);
-		utime(ctx->outfile.c_str(), &utb);
+		if( ! bak_fname.isnull() )
+			rename(infile->name, bak_fname);
+		if( ! out_fname.isnull() ) {
+			rename(out_fname, infile->name);
+			utime(infile->name.c_str(), &utb);
+		}
 
 		sem_post(sem);
 		sem_unlink(semname.c_str());
-	} else
-		unlink(tmp_outfile);
+	} else if( ! out_fname.isnull() )
+		unlink(out_fname.c_str());
 
 	return retval;
 }

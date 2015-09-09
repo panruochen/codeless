@@ -12,7 +12,7 @@
 #include <utime.h>
 
 #include "utils.h"
-#include "ycpp.h"
+#include "codeless.h"
 
 static void new_define(CMemFile& mfile, const char *option)
 {
@@ -38,14 +38,12 @@ static void new_define(CMemFile& mfile, const char *option)
 	return;
 }
 
-
 static void new_undef(CMemFile& mfile, const char *option)
 {
 	mfile << "#undef ";
 	mfile << option;
 	mfile << '\n';
 }
-
 
 static CC_STRING DoQuotes(const CC_STRING& o)
 {
@@ -106,30 +104,53 @@ static CC_STRING DoQuotes(const CC_STRING& o)
 }
 
 enum {
-	C_OPTION_IMACROS = 324,
-	C_OPTION_INCLUDE,
-	C_OPTION_ISYSTEM,
-	C_OPTION_NOSTDINC,
-	C_OPTION_SOURCE,
+	COP_IMACROS = 324,
+	COP_INCLUDE,
+	COP_ISYSTEM,
+	COP_NOSTDINC,
+	COP_SOURCE,
+	COP_IDIRAFTER,
 
-	C_OPTION_SAVE_COMMAND_LINE,
-	C_OPTION_SAVE_BYPASS,
-	C_OPTION_SAVE_DEPENDENCY,
-	C_OPTION_SAVE_CONDITIONAL_RESULTS,
-	C_OPTION_IN_PLACE,
-	C_OPTION_CC,
-	C_OPTION_CC_PATH,
-	C_OPTION_CLEANER_MODE,
-	C_OPTION_BYPASS,
-	C_OPTION_IMPORT_BYPASS,
-	C_OPTION_VERBOSE
+	COP_SAVE_COMMAND_LINE,
+	COP_SAVE_DEPENDENCY,
+	COP_SAVE_CONDVALS,
+	COP_IN_PLACE,
+	COP_NO_OUTPUT,
+	COP_CC,
+	COP_CC_PATH,
+	COP_CLEANER_MODE,
+	COP_IGNORE,
+	COP_VERBOSE
 };
 
+extern "C" {
+	struct gnu_option_s {
+		const char *name;
+		int value;
+	};
+}
 
-int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, const struct option *long_options)
+static const struct gnu_option_s *parse_again(const char *arg)
+{
+	static const struct gnu_option_s gops[] = {
+		{ "-idirafter", COP_IDIRAFTER },
+	};
+	size_t i;
+	for(i = 0; i < COUNT_OF(gops); i++) {
+		const unsigned len = strlen(gops[i].name);
+		if( memcmp(arg, gops[i].name, len) == 0 ) {
+			optarg = (char *) arg + len;
+			return &gops[i];
+		}
+	}
+	return NULL;
+}
+
+int CP_CONTEXT::get_options(int argc, char *argv[],const char *short_options, const struct option *long_options)
 {
 	int retval = -1;
 	int last_c = -1;
+	bool no_output = false;
 	this->argc = argc;
 	this->argv = argv;
 	optind = 1;
@@ -151,25 +172,30 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 
 		if (c == -1)
 			break;
+retry:
 		switch (c) {
-		case C_OPTION_IMACROS:
+		case COP_IMACROS:
 			imacro_files.push_back(optarg);
 			save_cc_args();
 			break;
-		case C_OPTION_INCLUDE:
+		case COP_INCLUDE:
 			include_files.push_back(optarg);
 			save_cc_args();
 			break;
-		case C_OPTION_ISYSTEM:
+		case COP_ISYSTEM:
 			isystem_dirs.push_back(optarg);
 			save_cc_args();
 			break;
-		case C_OPTION_NOSTDINC:
-			nostdinc = true;
+		case COP_NOSTDINC:
+			no_stdinc = true;
+			save_cc_args();
+			break;
+		case COP_IDIRAFTER:
+			after_dirs.push_back(optarg);
 			save_cc_args();
 			break;
 		case 'I':
-			ujoin(search_dirs, optarg);
+			ujoin(i_dirs, optarg);
 			save_cc_args();
 			break;
 		case 'D':
@@ -181,72 +207,54 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 			save_cc_args();
 			break;
 
-		case C_OPTION_SOURCE:
+		case COP_SOURCE:
 			source_files.push_back(optarg);
 			break;
-		case C_OPTION_SAVE_COMMAND_LINE:
+		case COP_SAVE_COMMAND_LINE:
 			of_cl = optarg;
 			save_my_args();
 			break;
-		case C_OPTION_SAVE_BYPASS:
-			of_by = optarg;
-			save_my_args();
-			break;
-		case C_OPTION_SAVE_DEPENDENCY:
+		case COP_SAVE_DEPENDENCY:
 			if(optarg != NULL)
 				of_dep = optarg;
 			else
 				of_dep = '\x1';
 			save_my_args();
 			break;
-		case C_OPTION_SAVE_CONDITIONAL_RESULTS:
+		case COP_SAVE_CONDVALS:
 			of_con = optarg;
 			save_my_args();
 			break;
-		case C_OPTION_IN_PLACE:
-			if(optarg != NULL)
-				baksuffix = optarg;
+		case COP_IN_PLACE:
+			if(optarg == NULL || optarg[0] == MAGIC_CHAR)
+				baksuffix = MAGIC_CHAR;
 			else
-				baksuffix = '\0';
+				baksuffix = optarg;
 			save_my_args();
 			break;
-		case C_OPTION_CC:
+		case COP_NO_OUTPUT:
+			no_output = true;
+			break;
+		case COP_CC:
 			cc = optarg;
 			save_my_args();
 			break;
-		case C_OPTION_CC_PATH:
+		case COP_CC_PATH:
 			cc_path = optarg;
 			save_my_args();
 			break;
 
-		case C_OPTION_CLEANER_MODE:
+		case COP_CLEANER_MODE:
 			gv_preprocess_mode = false;
 			save_my_args();
 			break;
 
-		case C_OPTION_BYPASS :
-			bypass_list.push_back(optarg);
+		case COP_IGNORE :
+			ignore_list.push_back(optarg);
 			save_my_args();
 			break;
-		case C_OPTION_IMPORT_BYPASS:
-		CB_BEGIN
-			FILE *fp;
-			char buf[2048];
-			fp = fopen(optarg, "r");
-			if(fp == NULL)
-				goto error;
-			while( fgets(buf, sizeof(buf), fp) != NULL ) {
-				char *p = buf + strlen(buf) - 1;
-				while(p >= buf && (*p == '\r' || *p == '\n') )
-					p--;
-				* ++p = '\0';
-				bypass_list.push_back(buf);
-			}
-			fclose(fp);
-		CB_END
-			break;
 
-		case C_OPTION_VERBOSE:
+		case COP_VERBOSE:
 		CB_BEGIN
 			LOG_VERB level;
 			level = (LOG_VERB) atol(optarg);
@@ -258,11 +266,29 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 		case ':':
 		case '?':
 		default:
+		CB_BEGIN
+			const struct gnu_option_s *gop;
+			gop = parse_again(argv[last_optind]);
+			if(gop) {
+				c = gop->value;
+				goto retry;
+			}
 			save_cc_args();
+		CB_END
 			break;
 		}
+
 		last_c = c;
 	}
+
+	if(!baksuffix.isnull()) {
+		if (no_output) {
+			errmsg = "Conflicting options: --yz-in-place and --yz-no-output";
+			goto error;
+		}
+		outfile = OF_NORM;
+	} else if(no_output)
+		outfile = OF_NULL;
 
 	for(int i = optind; i < argc; i++) {
 		uint8_t type;
@@ -270,7 +296,6 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 		type = check_source_type(argv[i]);
 		switch(type) {
 		case SOURCE_TYPE_CPP:
-//			new_define(predef_macros, "__cplusplus");
 			predef_macros << "#define __cplusplus\n";
 			predef_macros << "#define and    &&\n";
 			predef_macros << "#define or     ||\n";
@@ -281,6 +306,7 @@ int CP_CONTEXT::get_options(int argc, char *argv[], const char *short_options, c
 			predef_macros << "#define bitor  |\n";
 			predef_macros << "#define xor    ^\n";
 		case SOURCE_TYPE_C:
+		case SOURCE_TYPE_S:
 			source_files.push_back(argv[i]);
 		}
 
@@ -301,27 +327,26 @@ void __NO_USE__ dump_args(int argc, char *argv[]);
 int CP_CONTEXT::get_options(int argc, char *argv[])
 {
 	static const struct option long_options[] = {
-		{"yz-save-command-line",        1, 0, C_OPTION_SAVE_COMMAND_LINE },
-		{"yz-save-bypass",              1, 0, C_OPTION_SAVE_BYPASS },
-		{"yz-save-dependency",          2, 0, C_OPTION_SAVE_DEPENDENCY },
-		{"yz-save-conditional-results", 1, 0, C_OPTION_SAVE_CONDITIONAL_RESULTS },
-		{"yz-in-place",                 2, 0, C_OPTION_IN_PLACE },
-		{"yz-cc",                       1, 0, C_OPTION_CC },
-		{"yz-cc-path",                  1, 0, C_OPTION_CC_PATH },
-		{"yz-cleaner-mode",             0, 0, C_OPTION_CLEANER_MODE },
-		{"yz-bypass",                   1, 0, C_OPTION_BYPASS },
-		{"yz-import-bypass",            1, 0, C_OPTION_IMPORT_BYPASS },
-		{"yz-verbose",                  1, 0, C_OPTION_VERBOSE },
-		{"include",  1, 0, C_OPTION_INCLUDE},
-		{"imacros",  1, 0, C_OPTION_IMACROS},
-		{"isystem",  1, 0, C_OPTION_ISYSTEM},
-		{"nostdinc", 0, 0, C_OPTION_NOSTDINC},
+		{"yz-save-cl",         1, 0, COP_SAVE_COMMAND_LINE },
+		{"yz-save-dep",        2, 0, COP_SAVE_DEPENDENCY },
+		{"yz-save-condvals",   1, 0, COP_SAVE_CONDVALS },
+		{"yz-in-place",        2, 0, COP_IN_PLACE },
+		{"yz-no-output",       0, 0, COP_NO_OUTPUT },
+		{"yz-cc",              1, 0, COP_CC },
+		{"yz-cc-path",         1, 0, COP_CC_PATH },
+		{"yz-cleaner-mode",    0, 0, COP_CLEANER_MODE },
+		{"yz-ignore",          1, 0, COP_IGNORE },
+		{"yz-verbose",         1, 0, COP_VERBOSE },
+		{"include",  1, 0, COP_INCLUDE},
+		{"imacros",  1, 0, COP_IMACROS},
+		{"isystem",  1, 0, COP_ISYSTEM},
+		{"nostdinc", 0, 0, COP_NOSTDINC},
+		{"idirafter",1, 0, COP_IDIRAFTER},
 		{0, 0, 0, 0}
 	};
 	int retval;
 	opterr = 0;
 	levels = 0;
-	nostdinc = false;
 	retval = get_options(argc, argv, "I:D:U:", long_options);
 	return retval;
 }
@@ -346,12 +371,12 @@ void CP_CONTEXT::save_my_args()
 	}
 }
 
-bool CP_CONTEXT::check_if_bypass(const CC_STRING& filename)
+bool CP_CONTEXT::check_ignore(const CC_STRING& filename)
 {
-	if( bypass_list.size() == 0 || filename.isnull())
+	if( ignore_list.size() == 0 || filename.isnull())
 		return false;
-	for(size_t i = 0; i < bypass_list.size(); i++) {
-		const CC_STRING& p = bypass_list[i];
+	for(size_t i = 0; i < ignore_list.size(); i++) {
+		const CC_STRING& p = ignore_list[i];
 		if( p.size() < filename.size() &&
 			strcmp(filename.c_str() + filename.size() - p.size(), p.c_str()) == 0 )
 			return true;
@@ -394,23 +419,37 @@ CC_STRING CP_CONTEXT::get_include_file_path(const CC_STRING& included_file, cons
 		++count;
 		if( ! include_next ) {
 			if(in_sys_dir != NULL)
-				*in_sys_dir = find(compiler_search_dirs, curdir);
+				*in_sys_dir = find(compiler_dirs, curdir);
 			return path;
 		}
 	}
 
-	CC_ARRAY<CC_STRING>& dirs = search_dirs;
-	for(i = 0; i < dirs.size(); i++) {
-		path = dirs[i];
-		path += '/';
-		path += included_file;
+	CC_ARRAY<CC_STRING> *search_orders[] = { &i_dirs, &isystem_dirs, no_stdinc ? NULL : &compiler_dirs, &after_dirs } ;
+	for(i = 0; i < COUNT_OF(search_orders); i++) {
+		size_t j;
+		if( ! search_orders[i] )
+			continue;
+		CC_ARRAY<CC_STRING>& order = *search_orders[i];
+		for(j = 0; j < order.size(); j++) {
+			path = order[j];
+			path += '/';
+			path += included_file;
 
-		if( stat(path.c_str(), &st) == 0 ) {
-			++count;
-			if( ! include_next || count == 2) {
-				if(in_sys_dir != NULL)
-					*in_sys_dir = find(compiler_search_dirs, dirs[i]);
-				return path;
+			if( stat(path.c_str(), &st) == 0 ) {
+				bool v;
+				++count;
+				if( ! include_next || count == 2) {
+					if(in_sys_dir != NULL)
+						*in_sys_dir = v = find(compiler_dirs, order[j]);
+					if( 0 && strstr(path.c_str(), "arm-linux-gnueabihf") ) {
+						size_t nnn;
+						for(nnn = 0; nnn < compiler_dirs.size(); nnn++)
+							fprintf(stderr, "  sys: %s\n", compiler_dirs[nnn].c_str());
+						fprintf(stderr, "in_sys_dir = %d\n", v);
+						exit(1);
+					}
+					return path;
+				}
 			}
 		}
 	}
@@ -418,3 +457,11 @@ CC_STRING CP_CONTEXT::get_include_file_path(const CC_STRING& included_file, cons
 	return path;
 }
 
+CP_CONTEXT::CP_CONTEXT()
+{
+	as_lc_char = 0;
+	no_stdinc  = false;
+	outfile    = OF_STDOUT;
+}
+
+const char CP_CONTEXT::MAGIC_CHAR = '\x0';

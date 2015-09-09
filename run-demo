@@ -28,6 +28,10 @@ function prepare()
 			tar xfj $f.${suffix}
 			cd $f
 			./configure
+			git=$(which git 2>/dev/null)
+			if [ "x$git" != x ]; then
+				git init && git add . && git rm -rf --cached .deps && git commit -a -m 'v1'
+			fi
 			cd ..
 			tar cfj $ft.$suffix $f
 		fi
@@ -52,7 +56,7 @@ function step1()
 function step2()
 {
 	make clean
-	../../y-Make --yz-cc=gcc --yz-save-command-line=commands.txt --yz-shell=bash -j1 --yz-save-conditional-results=make-h.json
+	../../y-Make --yz-cc=gcc --yz-save-cl=gMake-commands.txt --yz-shell=bash --yz-save-dep=gMake-depends.txt --yz-save-condvals=gMake-condvals.txt ##--yz-postprocess
 	yMAKE=$(executable_get)
 	objcopy -O binary $yMAKE yy-2.bin
 	objdump -d $yMAKE > yy-2.asm

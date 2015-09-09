@@ -11,7 +11,7 @@
 #include <getopt.h>
 #include <libgen.h>
 
-#include "ycpp.h"
+#include "codeless.h"
 #include "utils.h"
 
 #define PROGRAM_NAME  "ycpp"
@@ -24,11 +24,11 @@ const void show_search_dirs(const CP_CONTEXT& yctx)
 	FILE *dev = stderr;
 
 	fprintf(dev, "Search directories:\n");
-	for(i = 0; i < yctx.search_dirs.size(); i++)
-		fprintf(dev, " %s\n", yctx.search_dirs[i].c_str());
+	for(i = 0; i < yctx.i_dirs.size(); i++)
+		fprintf(dev, " %s\n", yctx.i_dirs[i].c_str());
 	fprintf(dev, "System search directories:\n");
-	for(i = 0; i < yctx.compiler_search_dirs.size(); i++)
-		fprintf(dev, " %s\n", yctx.compiler_search_dirs[i].c_str());
+	for(i = 0; i < yctx.compiler_dirs.size(); i++)
+		fprintf(dev, " %s\n", yctx.compiler_dirs[i].c_str());
 	fprintf(dev, "\n");
 }
 
@@ -81,7 +81,7 @@ static void __NO_USE__ show_usage_and_exit(int exit_code)
 "       -y-source=FILE\n"
 "              Force FILE to be parsed.\n"
 "\n"
-"Report " PROGRAM_NAME " bugs to <coderelease@163.com>"
+"Report " PROGRAM_NAME " bugs to <ijkxyz@msn.com>"
 ;
 	log(LOGV_RUNTIME, "%s", help);
 	exit(exit_code);
@@ -97,7 +97,8 @@ SOURCE_TYPE check_source_type(const CC_STRING& filename)
 			return SOURCE_TYPE_C;
 		} else if( strcasecmp(p, "cc") == 0 || strcasecmp(p, "cxx") == 0 || strcasecmp(p, "cpp") == 0 ) {
 			return SOURCE_TYPE_CPP;
-		}
+		} else if( strcmp(p, "S") == 0 )
+			return SOURCE_TYPE_S;
 	}
 	return SOURCE_TYPE_ERR;
 }
@@ -116,7 +117,6 @@ static CC_STRING MakeDepFileName(const char *filename)
 	}
 	return s;
 }
-
 
 static void save_command_line(const CC_STRING& filename, const CC_STRING& host_cc, const CC_STRING& cc_args, const CC_STRING& my_args )
 {
@@ -183,7 +183,6 @@ static FILE *pyext_exec(const CC_STRING& host_cc, const CC_STRING entryf, const 
 	return fp;
 }
 
-
 static void get_host_cc_search_dirs(const CC_STRING& host_cc, CC_ARRAY<CC_STRING>& search_dirs, const CC_STRING& cl_args)
 {
 	FILE *fp;
@@ -200,20 +199,22 @@ static void get_host_cc_search_dirs(const CC_STRING& host_cc, CC_ARRAY<CC_STRING
 		pclose(fp);
 }
 
-
-static void get_host_cc_predefined_macros(const CC_STRING& host_cc, CMemFile& predef_macros, const CC_STRING& cl_args)
+static void get_host_cc_predefined_macros(const CC_STRING& host_cc, CMemFile& predef_macros, const CC_STRING& cl_args, char& as_lc_char)
 {
 	FILE *fp;
 	char buf[1024];
 
 	fp = pyext_exec(host_cc, "get_predefines", cl_args);
-	while( fgets(buf, sizeof(buf), fp) != NULL )
+	while( fgets(buf, sizeof(buf), fp) != NULL ) {
 		predef_macros << buf;
+		if(strstr(buf, "#define __arm__"))
+			as_lc_char = '@';
+		else if(strstr(buf, "#define __x86"))
+			as_lc_char = ';';
+	}
 	if(fp != NULL)
 		pclose(fp);
 }
-
-
 
 int main(int argc, char *argv[])
 {
@@ -224,7 +225,10 @@ int main(int argc, char *argv[])
 	my_dir = fol_dirname(argv[0]);
 
 	if( yctx.get_options(argc, argv) != 0 )
-		fatal(128, "Invalid options\n");
+		fatal(128, "%s\n", yctx.errmsg.c_str());
+
+//	fprintf(stderr, "outfile = %d\n", yctx.outfile);
+//	fprintf(stderr, "baksuffix = %zu,%s\n", yctx.baksuffix.size(), yctx.baksuffix.c_str());
 
 	if(!yctx.of_cl.isnull())
 		save_command_line(yctx.of_cl.c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
@@ -242,16 +246,12 @@ int main(int argc, char *argv[])
 		setenv("YZ_CC_PATH", yctx.cc_path.c_str(), 1);
 		unsetenv("LANG");
 		unsetenv("LANGUAGE");
-		get_host_cc_predefined_macros(yctx.cc, yctx.predef_macros, yctx.cc_args);
-		if( ! yctx.nostdinc )
-			get_host_cc_search_dirs(yctx.cc, yctx.compiler_search_dirs, yctx.cc_args);
-		else
-			yctx.compiler_search_dirs = yctx.isystem_dirs ;
-		join(yctx.search_dirs, yctx.compiler_search_dirs);
+		get_host_cc_predefined_macros(yctx.cc, yctx.predef_macros, yctx.cc_args, yctx.as_lc_char);
+		get_host_cc_search_dirs(yctx.cc, yctx.compiler_dirs, yctx.cc_args);
 	}
 
 	tcc_init(tc);
-	CYcpp yc;
+	CCodeLess yc;
 
 	if( yctx.source_files.size() == 0 )
 		exit(0);
@@ -272,13 +272,10 @@ int main(int argc, char *argv[])
 				yctx.of_dep = MakeDepFileName(current_file);
 		}
 
-
 		file.SetFileName(current_file);
-		if( yctx.outfile.isnull() )
-			yctx.outfile  = (!yctx.baksuffix.isnull()) ? current_file : "/dev/stdout";
 
 		if( ! yc.DoFile(tc, (size_t)-1, &file, &yctx))
-			fatal(120, "Error on preprocessing \"%s\"\n%s\n", current_file, yc.errmsg.c_str());
+			fatal(120, "%s", yc.errmsg.c_str());
 		break;
 	}
 

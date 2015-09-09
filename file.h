@@ -5,10 +5,11 @@
 #include "cc_string.h"
 
 class CFile {
-	friend class CYcpp;
+	friend class CCodeLess;
 protected:
-	CC_STRING  name;
-	size_t     line;
+	CC_STRING name;
+	size_t line;
+	int offset;
 public:
 	virtual int  ReadChar() = 0;
 	virtual bool Open() = 0;
@@ -21,12 +22,12 @@ protected:
 	FILE *fp;
 
 	virtual inline int ReadChar();
-	
+
 public:
 	virtual inline bool Open();
 	virtual inline void Close();
 	virtual inline ~CRealFile();
-	inline CRealFile(); 
+	inline CRealFile();
 
 	inline void SetFileName(const CC_STRING& name);
 	inline bool Open(const CC_STRING& filename);
@@ -40,10 +41,10 @@ protected:
 
 public:
 	CC_STRING  contents;
-	inline CMemFile(); 
+	inline CMemFile();
 	virtual inline ~CMemFile();
 
-	inline void SetFileName(const CC_STRING& name); 
+	inline void SetFileName(const CC_STRING& name);
 	virtual inline bool Open();
 	virtual inline void Close();
 

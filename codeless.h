@@ -43,16 +43,21 @@ private:
 	void   Reset();
 
 public:
+	enum OF_TYPE { OF_NULL = 0, OF_STDOUT, OF_NORM };
+	static const char MAGIC_CHAR;
 	CC_ARRAY<CC_STRING>  source_files;
-	CC_ARRAY<CC_STRING>  search_dirs;
-	CC_ARRAY<CC_STRING>  compiler_search_dirs;
+
+	CC_ARRAY<CC_STRING>  i_dirs;
+	CC_ARRAY<CC_STRING>  isystem_dirs;
+	CC_ARRAY<CC_STRING>  after_dirs;
+	CC_ARRAY<CC_STRING>  compiler_dirs;
+
 	CMemFile             predef_macros;
-	CC_STRING            outfile;
+//	CC_STRING            outfile;
 
 	/* Additional output files */
 	CC_STRING            of_dep; /* dependencies */
 	CC_STRING            of_cl;  /* command line */
-	CC_STRING            of_by;  /* bypass */
 	CC_STRING            of_con; /* conditional evaluation */
 
 	CC_STRING            baksuffix;
@@ -60,12 +65,15 @@ public:
 	CC_STRING            cc_path;
 	CC_STRING            cc_args;
 	CC_STRING            my_args;
-	bool                 nostdinc;
 	CC_ARRAY<CC_STRING>  imacro_files;
-	CC_ARRAY<CC_STRING>  isystem_dirs;
-	CC_ARRAY<CC_STRING>  include_files;
-	CC_ARRAY<CC_STRING>  bypass_list;
 
+	CC_ARRAY<CC_STRING>  include_files;
+	CC_ARRAY<CC_STRING>  ignore_list;
+	bool                 no_stdinc;
+	char                 as_lc_char;  // Assembler line command char
+	OF_TYPE              outfile;
+
+	CC_STRING            errmsg;
 	int                  argc;
 	char               **argv;
 
@@ -73,9 +81,10 @@ public:
 	void   save_cc_args();
 	void   save_my_args();
 
-	bool check_if_bypass(const CC_STRING& filename);
+	bool check_ignore(const CC_STRING& filename);
 	CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
 		bool quote_include, bool include_next, bool *in_sys_dir);
+	CP_CONTEXT();
 };
 
 class CException {
@@ -90,6 +99,7 @@ public:
 	inline CException& operator = (const char *msg);
 	inline CException& operator = (const CC_STRING& msg);
     inline void format(const char *fmt, ...);
+	inline void AddPrefix(const CC_STRING&);
 };
 
 /* Tri-State values */
@@ -99,7 +109,7 @@ enum TRI_STATE {
 	TSV_X = 2,
 };
 
-class CYcpp {
+class CCodeLess {
 protected:
 	static const char *preprocessors[];
 	size_t       num_preprocessors;
@@ -175,13 +185,23 @@ protected:
 			const char *filename;
 #endif
 			const COND_TYPE type;
+
+/*
+ *  A folded syntactic line could come from multiple physical lines as follows
+ *
+ *     Line 1 \  <-- boff
+ *     Line 2 \
+ *     ...
+ *     Line n    <-- line_num
+ */
 			const linenum_t begin;
+			const int boff;
 			linenum_t end;
 			bool value;
 			CListEntry sub_chains; /* subordinate chains */
 
 		public:
-			CCond(CCondChain *cc, COND_TYPE ctype, bool value, uint32_t ln, const char *filename);
+			CCond(CCondChain *, COND_TYPE, bool, uint32_t, int, const char *);
 			void append(CCondChain *cc);
 			void sanity_check();
 
@@ -275,7 +295,6 @@ protected:
 	/*-------------------------------------------------------------*/
 	TCC_CONTEXT   *tc;
 
-	CC_STRING      baksuffix;
 	CC_STRING      deptext;
 	CException     gex;
 
@@ -306,7 +325,7 @@ protected:
 
 public:
 	CC_STRING errmsg;
-	inline CYcpp();
+	inline CCodeLess();
 	bool DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile  *infile, CP_CONTEXT *cp_ctx);
 };
 
@@ -321,6 +340,7 @@ enum SOURCE_TYPE {
 	SOURCE_TYPE_ERR = 0,
 	SOURCE_TYPE_C   = 1,
 	SOURCE_TYPE_CPP = 2,
+	SOURCE_TYPE_S   = 3,
 };
 SOURCE_TYPE check_source_type(const CC_STRING& filename);
 
@@ -331,7 +351,7 @@ SOURCE_TYPE check_source_type(const CC_STRING& filename);
 #define CB_BEGIN     {
 #define CB_END       }
 
-#include "ycpp.inl"
+#include "codeless.inl"
 #include "char.h"
 #include "globalvar.h"
 
