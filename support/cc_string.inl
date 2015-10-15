@@ -1,10 +1,10 @@
 #ifndef __CC_STRING_INL
 #define __CC_STRING_INL
 
-inline const CC_STRING operator + (const char *s1, const CC_STRING& s2) 
+inline const CC_STRING operator + (const char *s1, const CC_STRING& s2)
 { return std::operator+(s1,s2); }
 
-inline const CC_STRING operator + (const char c, const CC_STRING& s) 
+inline const CC_STRING operator + (const char c, const CC_STRING& s)
 { return std::operator+(c,s); }
 
 inline const CC_STRING operator + (const CC_STRING& s1, const CC_STRING& s2)
@@ -19,10 +19,10 @@ inline const CC_STRING operator + (const CC_STRING& s, const char c)
 inline bool operator == (const char *s1, const CC_STRING& s2)
 { return std::operator==(s1, s2);  }
 
-inline bool operator == (const CC_STRING& s1, const char *s2) 
+inline bool operator == (const CC_STRING& s1, const char *s2)
 { return std::operator==(s1, s2);  }
 
-inline bool operator == (const CC_STRING& s1, const CC_STRING& s2) 
+inline bool operator == (const CC_STRING& s1, const CC_STRING& s2)
 { return std::operator==(s1, s2);  }
 
 inline CC_STRING::CC_STRING() : std::string() {}
@@ -71,13 +71,13 @@ inline const CC_STRING& CC_STRING::operator += (const char c)
 	return *this;
 }
 
-inline ssize_t CC_STRING::find(const CC_STRING& s)
+inline ssize_t CC_STRING::find(const CC_STRING& s) const
 {
 	std::string::size_type pos = std::string::find(s);
 	return pos == std::string::npos ? -1 : pos;
 }
 
-inline ssize_t CC_STRING::rfind(const char c)
+inline ssize_t CC_STRING::rfind(const char c) const
 {
 	std::string::size_type pos = std::string::rfind(c);
 	return pos == std::string::npos ? -1 : pos;
@@ -97,7 +97,7 @@ inline CC_STRING& CC_STRING::operator=(const char *s)
 	return *this;
 }
 
-inline const char * CC_STRING::c_str() const 
+inline const char * CC_STRING::c_str() const
 {
     if(std::string::size() > 0 )
 	   return std::string::c_str();

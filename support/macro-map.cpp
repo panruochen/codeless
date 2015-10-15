@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#include "tcc.h"
+#include "ParsedState.h"
 
-typedef std::map<sym_t,CMacro*>  MAP;
+typedef std::map<sym_t,SynMacro*>  MAP;
 
 struct MACRO_TABLE {
 	MAP             map;
@@ -16,7 +16,7 @@ struct MACRO_TABLE {
 
 #define DECLARE(_m,_h)  MAP& _m = ((MACRO_TABLE *)(_h))->map
 
-int CMacMap::Create()
+int MacLut::Create()
 {
 	MACRO_TABLE  *mtab;
 		
@@ -28,7 +28,7 @@ int CMacMap::Create()
     return 0;
 }
 
-int CMacMap::Put(sym_t id, CMacro *minfo)
+int MacLut::Put(sym_t id, SynMacro *minfo)
 {
 	DECLARE(map, handle);
 	MAP::iterator pos;
@@ -41,8 +41,8 @@ int CMacMap::Put(sym_t id, CMacro *minfo)
 			return (-1);
 		return id;
 	} else {
-		CMacro *old = pos->second;
-		if(old != CMacro::NotDef)
+		SynMacro *old = pos->second;
+		if(old != SynMacro::NotDef)
 			free(old);
 		pos->second = minfo;
 		return id;
@@ -50,7 +50,7 @@ int CMacMap::Put(sym_t id, CMacro *minfo)
 	return -1;
 }
 
-void CMacMap::Remove(sym_t id)
+void MacLut::Remove(sym_t id)
 {
 	DECLARE(map, handle);
 	MAP::iterator pos;
@@ -64,9 +64,9 @@ void CMacMap::Remove(sym_t id)
  * Return Value:
  * NULL            -- The macro name is NOT explicitly defined
  * TCC_MACRO_UNDEF -- The macro name is explicitly undefined
- * Others          -- A pointer to a CMacro structure
+ * Others          -- A pointer to a SynMacro structure
  */
-CMacro *CMacMap::Lookup(sym_t id)
+SynMacro *MacLut::Lookup(sym_t id)
 {
 	DECLARE(map, handle);
 	MAP::iterator pos;
@@ -78,7 +78,7 @@ CMacro *CMacMap::Lookup(sym_t id)
 }
 
 
-void CMacMap::Destroy()
+void MacLut::Destroy()
 {
 	MACRO_TABLE *mt = (MACRO_TABLE *)handle;
 	DECLARE(map, handle);
@@ -88,7 +88,7 @@ void CMacMap::Destroy()
 }
 
 /***
-sym_t MacMap_list(CC_HANDLE __h, CMacro **minfo)
+sym_t MacMap_list(CC_HANDLE __h, SynMacro **minfo)
 {
 	MACRO_TABLE *mt = (MACRO_TABLE *)__h;
 	DECLARE(map, __h);

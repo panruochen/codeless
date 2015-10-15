@@ -5,7 +5,7 @@
 #include <errno.h>
 
 #include <map>
-#include "tcc.h"
+#include "ParsedState.h"
 
 typedef unsigned int ykey_t;
 typedef std::map<ykey_t,int>  II_MAP;
@@ -13,7 +13,7 @@ typedef std::map<ykey_t,int>  II_MAP;
 #define MAKE_KEY(op1, op2)  (((op1) << 16) | (op2))
 #define GET_CC_MAP_CONTAINER(_c, _h)  II_MAP &_c = (* (II_MAP *) _h)
 
-int COPMatrix::Create()
+int OPMatrix::Create()
 {
 	II_MAP  *opm;
 	opm = new II_MAP;
@@ -23,13 +23,13 @@ int COPMatrix::Create()
     return 0;
 }
 
-void COPMatrix::Construct()
+void OPMatrix::Construct()
 {
 	GET_CC_MAP_CONTAINER(container, handle);
 	container.clear();
 }
 
-int COPMatrix::Put(sym_t op1, sym_t op2, int precedence)
+int OPMatrix::Put(sym_t op1, sym_t op2, int precedence)
 {
 	GET_CC_MAP_CONTAINER(container, handle);
 	II_MAP::iterator pos;
@@ -43,12 +43,12 @@ int COPMatrix::Put(sym_t op1, sym_t op2, int precedence)
 	return -EEXIST;
 }
 
-void COPMatrix::Destroy()
+void OPMatrix::Destroy()
 {
 	delete ((II_MAP *) handle);
 }
 
-int COPMatrix::Compare(sym_t op1, sym_t op2)
+int OPMatrix::Compare(sym_t op1, sym_t op2)
 {
 	GET_CC_MAP_CONTAINER(container, handle);
 	const ykey_t key = MAKE_KEY(op1, op2);

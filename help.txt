@@ -1,0 +1,47 @@
+NAME
+       PROGRAM_NAME - Yet another C/C++ Preprocessor
+
+SYNOPSIS
+       PROGRAM_NAME [OPTION]... [FILE]
+
+DESCRIPTION
+       Parse and remove conditional compilation blocks from C/C++ source files.
+
+  OPTIONS INHERITED FROM COMMAND LINE
+       -imacro FILE
+              Obtain explicit macro definitions from FILE
+
+       -I DIR
+              Search DIR for header files
+
+       -D name
+              Predefine name as a macro, with definition 1.
+
+       -D name=definition
+              Predefine name as a macro, with definition.
+
+       -U name
+              Cancel any previous definition of name.
+
+  OPTIONS FOR SELF
+       --yz-in-place [SUFFIX]
+              Overwrite the input files instead of outputting to STDOUT
+              Back up if SUFFIX is specified
+
+       --yz-debug LEVEL
+              Set debug message level
+
+       --yz-preprocess
+              Force the parser to work in preprocessor mode, where
+              1. Included files are fetched and parsed
+              2. Undefined macros are regarded as blanks on evaluation
+              3. Exit upon any error
+
+       --yz-print-dep FILE
+              Print path names of dependent header files to FILE, excluding those in the compiler installation directories.
+
+       --yz-source FILE
+              Force FILE to be parsed.
+
+Report bugs to <ijkxyz@msn.com>
+

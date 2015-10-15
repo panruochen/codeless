@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include "cc_string.h"
 
-class CFile {
-	friend class CCodeLess;
+class File {
+	friend class Parser;
 protected:
 	CC_STRING name;
 	size_t line;
@@ -14,10 +14,10 @@ public:
 	virtual int  ReadChar() = 0;
 	virtual bool Open() = 0;
 	virtual void Close() = 0;
-	virtual ~CFile() {} ;
+	virtual ~File() {} ;
 };
 
-class CRealFile : public CFile {
+class RealFile : public File {
 protected:
 	FILE *fp;
 
@@ -26,14 +26,14 @@ protected:
 public:
 	virtual inline bool Open();
 	virtual inline void Close();
-	virtual inline ~CRealFile();
-	inline CRealFile();
+	virtual inline ~RealFile();
+	inline RealFile();
 
 	inline void SetFileName(const CC_STRING& name);
 	inline bool Open(const CC_STRING& filename);
 };
 
-class CMemFile : public CFile {
+class MemFile : public File {
 protected:
 	size_t     pos;
 //	CC_STRING  contents;
@@ -41,21 +41,21 @@ protected:
 
 public:
 	CC_STRING  contents;
-	inline CMemFile();
-	virtual inline ~CMemFile();
+	inline MemFile();
+	virtual inline ~MemFile();
 
 	inline void SetFileName(const CC_STRING& name);
 	virtual inline bool Open();
 	virtual inline void Close();
 
-	inline CMemFile& operator << (const char *s);
-	inline CMemFile& operator << (const CC_STRING& s);
-	inline CMemFile& operator << (const char c);
+	inline MemFile& operator << (const char *s);
+	inline MemFile& operator << (const CC_STRING& s);
+	inline MemFile& operator << (const char c);
 
 	inline size_t Size();
 };
 
-#include "file.inl"
+#include "File.inl"
 
 #endif
 

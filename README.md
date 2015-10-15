@@ -1,4 +1,10 @@
-## YCPP - A C/C++ source code preprocessor
+## CODELESS - Read LESS CODE
+
+长久以来，一直都有一个困扰我的问题：如何在
+
+It has been time that I was troubled by one question: how to read
+source code effiently on a huge projects. Thousands of source files,
+millions of lines.
 
 YCPP is designed to remove conditional blocks.
 

@@ -11,14 +11,16 @@
 #include <getopt.h>
 #include <libgen.h>
 
-#include "codeless.h"
+#include "Parser.h"
+#include "Fol.h"
+#include "GlobalVars.h"
 #include "utils.h"
 
-#define PROGRAM_NAME  "ycpp"
+static void __NO_USE__ show_usage_and_exit(int exit_code);
 
 static CC_STRING my_dir;
 
-const void show_search_dirs(const CP_CONTEXT& yctx)
+const void show_search_dirs(const ParserContext& yctx)
 {
 	size_t i;
 	FILE *dev = stderr;
@@ -30,61 +32,6 @@ const void show_search_dirs(const CP_CONTEXT& yctx)
 	for(i = 0; i < yctx.compiler_dirs.size(); i++)
 		fprintf(dev, " %s\n", yctx.compiler_dirs[i].c_str());
 	fprintf(dev, "\n");
-}
-
-
-static void __NO_USE__ show_usage_and_exit(int exit_code)
-{
-	const char *help =
-"NAME\n"
-"       "PROGRAM_NAME" - Yet another C/C++ Preprocessor\n"
-"\n"
-"SYNOPSIS\n"
-"       "PROGRAM_NAME" [OPTION]... [FILE]\n"
-"\n"
-"DESCRIPTION\n"
-"       Parse and remove conditional compilation blocks from C/C++ source files.\n"
-"\n"
-"  OPTIONS INHERITED FROM COMMAND LINE\n\n"
-"       -imacro FILE\n"
-"              Obtain explicit macro definitions from FILE\n"
-"\n"
-"       -I DIR\n"
-"              Search DIR for header files\n"
-"\n"
-"       -D name\n"
-"              Predefine name as a macro, with definition 1.\n"
-"\n"
-"       -D name=definition\n"
-"              Predefine name as a macro, with definition.\n"
-"\n"
-"       -U name\n"
-"              Cancel any previous definition of name.\n"
-"\n"
-"  OPTIONS FOR SELF\n\n"
-"       -y-in-place [SUFFIX]\n"
-"              Overwrite the input files instead of outputting to STDOUT\n"
-"              Back up if SUFFIX is specified\n"
-"\n"
-"       -y-debug LEVEL\n"
-"              Set debug message level\n"
-"\n"
-"       -y-preprocess\n"
-"              Force to work in preprocessor mode. In this mode,\n"
-"               1. Include files are fetched and handled\n"
-"               2. Undefined macros are regarded as blanks during evaluation\n"
-"               3. Exit upon any error\n"
-"\n"
-"       -y-print-dependency=FILE\n"
-"              Print path names of dependent header files to FILE, excluding those in system search directories.\n"
-"\n"
-"       -y-source=FILE\n"
-"              Force FILE to be parsed.\n"
-"\n"
-"Report " PROGRAM_NAME " bugs to <ijkxyz@msn.com>"
-;
-	log(LOGV_RUNTIME, "%s", help);
-	exit(exit_code);
 }
 
 
@@ -199,7 +146,7 @@ static void get_host_cc_search_dirs(const CC_STRING& host_cc, CC_ARRAY<CC_STRING
 		pclose(fp);
 }
 
-static void get_host_cc_predefined_macros(const CC_STRING& host_cc, CMemFile& predef_macros, const CC_STRING& cl_args, char& as_lc_char)
+static void get_host_cc_predefined_macros(const CC_STRING& host_cc, MemFile& predef_macros, const CC_STRING& cl_args, char& as_lc_char)
 {
 	FILE *fp;
 	char buf[1024];
@@ -218,14 +165,17 @@ static void get_host_cc_predefined_macros(const CC_STRING& host_cc, CMemFile& pr
 
 int main(int argc, char *argv[])
 {
-	TCC_CONTEXT tcc_context, *tc = &tcc_context;
+	ParsedState tcc_context, *pstate = &tcc_context;
 	size_t i;
-	CP_CONTEXT yctx;
+	ParserContext yctx;
 
 	my_dir = fol_dirname(argv[0]);
 
 	if( yctx.get_options(argc, argv) != 0 )
 		fatal(128, "%s\n", yctx.errmsg.c_str());
+
+	if( yctx.print_help )
+		show_usage_and_exit(0);
 
 //	fprintf(stderr, "outfile = %d\n", yctx.outfile);
 //	fprintf(stderr, "baksuffix = %zu,%s\n", yctx.baksuffix.size(), yctx.baksuffix.c_str());
@@ -250,19 +200,19 @@ int main(int argc, char *argv[])
 		get_host_cc_search_dirs(yctx.cc, yctx.compiler_dirs, yctx.cc_args);
 	}
 
-	tcc_init(tc);
-	CCodeLess yc;
+	paserd_state_init(pstate);
+	Parser yc;
 
 	if( yctx.source_files.size() == 0 )
 		exit(0);
 
 	if(yctx.predef_macros.Size() > 0) {
 		yctx.predef_macros.SetFileName("<command line>");
-		if( ! yc.DoFile(tc, 2, &yctx.predef_macros, NULL) )
+		if( ! yc.DoFile(pstate, 2, &yctx.predef_macros, NULL) )
 			fatal(121, "Error on parsing command line\n") ;
 	}
 
-	CRealFile file;
+	RealFile file;
 	for(i = 0; i < yctx.source_files.size(); i++) {
 		const char *current_file = yctx.source_files[i].c_str();
 		CC_STRING s;
@@ -274,7 +224,7 @@ int main(int argc, char *argv[])
 
 		file.SetFileName(current_file);
 
-		if( ! yc.DoFile(tc, (size_t)-1, &file, &yctx))
+		if( ! yc.DoFile(pstate, (size_t)-1, &file, &yctx))
 			fatal(120, "%s", yc.errmsg.c_str());
 		break;
 	}
@@ -283,5 +233,12 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
+
+#include "help.h"
+static void __NO_USE__ show_usage_and_exit(int exit_code)
+{
+	log(LOGV_RUNTIME, "%s", help_msg);
+	exit(exit_code);
+}
 
 

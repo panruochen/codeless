@@ -31,10 +31,9 @@ void set_log_verbosity(LOG_VERB verb)
 
 void log(LOG_VERB verb, const char *format, ...)
 {
-    char *buf, __buf0[1024];
+    char *buf, lbuf[1024];
     va_list ap;
-    size_t n;
-	int rc;
+    size_t len;
 
     if((unsigned long)verb < (unsigned long)verb_gate)
         return;
@@ -44,20 +43,22 @@ void log(LOG_VERB verb, const char *format, ...)
             fatal(133, "Cannot open \"%s\": %s\n", log_file, strerror(errno));
     }
 
-    buf = __buf0;
+    buf = lbuf;
     va_start(ap, format);
-    n = vsnprintf(__buf0, sizeof(__buf0), format, ap);
+    len = vsnprintf(buf, sizeof(lbuf), format, ap);
     va_end(ap);
-    if(n >= sizeof(__buf0)) {
-        buf = (char*)malloc(n + 4);
-        n = vsnprintf(buf, n+4, format, ap);
+
+	/* buffer is not large enough, malloc and do it again */
+    if(len >= sizeof(lbuf)) {
+		const size_t buf_sz = len + 1;
+        buf = (char*)malloc(buf_sz);
+		va_start(ap, format);
+		len = vsnprintf(buf, buf_sz, format, ap);
+		va_end(ap);
     }
 
-    rc = write(log_fd, buf, n);
-	(void) rc;
-    if(buf != __buf0)
+    write(log_fd, buf, len);
+    if(buf != lbuf)
         free(buf);
 }
-
-
 

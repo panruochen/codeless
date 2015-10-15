@@ -6,10 +6,13 @@
 #include <unistd.h>
 #include <sys/types.h>
 
-#include "codeless.h"
+#include "ParsedState.h"
+#include "cc_string.h"
+#include "cc_array.h"
+#include "base.h"
+#include "Exception.h"
 
-
-static CC_STRING get_format(const CC_STRING& s)
+static CC_STRING get_format(const CC_STRING& s, Exception *exc)
 {
 	CC_STRING fmt;
 
@@ -24,51 +27,51 @@ static CC_STRING get_format(const CC_STRING& s)
 		fmt += s[0];
 		break;
 	default:
-		log(LOGV_RUNTIME, "Bad format: %s\n", s.c_str());
-		assert(0);
+		if(exc)
+			exc->format("Bad format: %s\n", s.c_str());
 	}
 	return fmt;
 }
 
 #define ishexdigit(c)  (isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
 
-static CToken new_token(TCC_CONTEXT *tc, const CC_STRING& name, short attr = CToken::TA_OPR)
+static SynToken new_token(ParsedState *pstate, const CC_STRING& name, short attr = SynToken::TA_OPR)
 {
-	CToken token;
+	SynToken token;
 
-	token.id   = tc->syMap.Put(name);
+	token.id   = pstate->syLut.Put(name);
 	token.attr = attr;
     token.name = name;
 	return token;
 }
 
-void new_number(TCC_CONTEXT *tc, CToken &token, const CC_STRING& name, int base, const CC_STRING& format)
+static void new_number(ParsedState *pstate, SynToken &token, const CC_STRING& name, int base, const CC_STRING& format)
 {
-	token.id     = tc->syMap.Put(name);
-	token.attr   = CToken::TA_UINT;
+	token.id     = pstate->syLut.Put(name);
+	token.attr   = SynToken::TA_UINT;
 	sscanf(name.c_str(), format.c_str(), &token.u32_val);
     token.name = name;
 }
 
 #define GET_OPERATOR()                       do{ \
     if(cword.size() > 0)                         \
-        token = new_token(tc, cword);            \
+        token = new_token(pstate, cword);            \
     if(cword.size() == 2)                        \
         p++;                                     \
     goto done;                                   \
 } while(0)
 
 #define GET_NUMBER(base,format)              do{ \
-	new_number(tc, token, cword, base, format);  \
+	new_number(pstate, token, cword, base, format);  \
+	if(excep && excep->GetError())                   \
+	    goto error;                              \
     goto done;                                   \
 } while(0)
 
-
-
-/**  
+/**
  * Get one token from the input line and then move the read pointer forward.
  **/
-bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex, bool for_include)
+bool ReadToken(ParsedState *pstate, const char **line, SynToken *tokp, Exception *excep, bool for_include)
 {
 	CC_STRING e_msg;
 	enum {
@@ -100,7 +103,7 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 	} state;
 	bool retval = false;
 	CC_STRING cword;
-	CToken& token = *tokp;
+	SynToken& token = *tokp;
 	char c;
 	char quation = 0;
 	const char *p;
@@ -131,10 +134,10 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 			case '\t':
 			case '\n':
 				break;
-			case '|': 
+			case '|':
 				state = SM_STATE_SINGLE_VBAR ;
 				break;
-			case '&': 
+			case '&':
 				state = SM_STATE_SINGLE_AND;
 				break;
 			case '!':
@@ -151,11 +154,11 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 				state = SM_STATE_MORE;
 				cword = c;
 				break;
-			case '+': 
+			case '+':
 				state = SM_STATE_ADDITION;
 				cword = c;
 				break;
-			case '-': 
+			case '-':
 				state = SM_STATE_SUBTRACTION;
 				cword = c;
 				break;
@@ -183,7 +186,7 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 			case ':':
 			case ',':
 				cword = c;
-				token = new_token(tc, cword);
+				token = new_token(pstate, cword);
 				p++;
 				goto done;
 			default:
@@ -195,18 +198,12 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 					state = SM_STATE_IDENTIFIER;
 				} else {
 					cword = c;
-		               token = new_token(tc, cword);
+		               token = new_token(pstate, cword);
 					p++;
 					goto done;
 				}
 				break;
 			}
-			/**
-			if( for_include && (state != SM_STATE_INITIAL && state != SM_STATE_IDENTIFIER && state != SM_STATE_LESS && state != SM_STATE_STRING) ) {
-				fprintf(stderr,  "state=%d, sm_ident=%d\n", state, SM_STATE_IDENTIFIER);
-				*gex = "#include expects \"FILENAME\" or <FILENAME>";
-				goto error;
-			}**/
 			break;
 
 		case SM_STATE_IDENTIFIER:
@@ -215,7 +212,7 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 			else if(c == '"' || c == '\'') {
 				goto got_string;
 			} else {
-				token = new_token(tc, cword, CToken::TA_IDENT);
+				token = new_token(pstate, cword, SynToken::TA_IDENT);
 				goto done;
 			}
 			break;
@@ -230,7 +227,7 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 			} else if(c == '8' || c == '9') {
 				e_msg  = "Invalid number: ";
 				e_msg += c;
-				*gex = e_msg;
+				*excep = e_msg;
 				goto error;
 			} else
 				GET_NUMBER(10,"%u");
@@ -248,7 +245,7 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 				cword += c;
 				state = SM_STATE_HEX_NUM;
 			} else {
-				*gex = "Invalid token 0x";
+				*excep = "Invalid token 0x";
 				goto error;
 			}
 			break;
@@ -289,16 +286,18 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 				format = 'l' + format ;
 				state = SM_STATE_NUM_POSTFIX2;
 			} else
-				GET_NUMBER(base, get_format(format));
+				GET_NUMBER(base, get_format(format,excep));
 			break;
 		case SM_STATE_NUM_POSTFIX2:
 			if(c == 'L' || c == 'l') {
 				format = 'l' + format ;
-				new_number(tc, token, cword, base, get_format(format));
+				new_number(pstate, token, cword, base, get_format(format,excep));
+				if(excep && excep->GetError())
+					goto error;
 				p++;
 				goto done;
 			} else
-				GET_NUMBER(base, get_format(format));
+				GET_NUMBER(base, get_format(format,excep));
 			break;
 
 		case SM_STATE_SINGLE_VBAR:
@@ -352,7 +351,7 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 
 		case SM_STATE_ADDITION:
 			if(c == '+') {
-				*gex = "Invalid ++ operator";
+				*excep = "Invalid ++ operator";
 				goto error;
 			} else {
 				GET_OPERATOR();
@@ -361,7 +360,7 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 
 		case SM_STATE_SUBTRACTION:
 			if(c == '-') {
-				*gex = "Invalid -- operator";
+				*excep = "Invalid -- operator";
 				goto error;
 			} else {
 				GET_OPERATOR();
@@ -379,14 +378,14 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 			switch( c ) {
 			case '"':
 				if(quation == '"') {
-					token = new_token(tc, cword, CToken::TA_STR);
+					token = new_token(pstate, cword, SynToken::TA_STR);
 					p++;
 					goto done;
 				}
 				break;
 			case '\'':
 				if(quation == '\'') {
-					token = new_token(tc, cword, CToken::TA_CHAR);
+					token = new_token(pstate, cword, SynToken::TA_CHAR);
 					token.i32_val = char_val;
 					p++;
 					goto done;
@@ -430,15 +429,15 @@ bool ReadToken(TCC_CONTEXT *tc, const char **line, CToken *tokp, CException *gex
 
 		case SM_STATE_DOT2:
 			cword += c;
-			token = new_token(tc, cword);
+			token = new_token(pstate, cword);
 			p++;
 			goto done;
 		}
 		if(c == '\0') {
 			if(state == SM_STATE_STRING || state == SM_STATE_STR_ESC || state == SM_STATE_STR_HEX) {
-				*gex = "Unterminated string";
+				*excep = "Unterminated string";
 				goto error;
-			} 
+			}
 			break;
 		}
 	}

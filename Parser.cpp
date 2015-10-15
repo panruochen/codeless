@@ -12,34 +12,37 @@
 #include <fcntl.h>
 #include <semaphore.h>
 
-#include "codeless.h"
+#include "Parser.h"
+#include "Fol.h"
+#include "GlobalVars.h"
 #include "utils.h"
+#include "misc.h"
 
 static bool check_prev_operator(sym_t id)
 {
 	switch(id) {
-		case  SSID_LOGIC_OR:
-		case  SSID_LOGIC_AND:
-		case  SSID_LOGIC_NOT:
-		case  SSID_BITWISE_OR:
-		case  SSID_BITWISE_XOR:
-		case  SSID_BITWISE_AND:
-		case  SSID_EQUAL:
-		case  SSID_NOT_EQUAL:
-		case  SSID_LESS:
-		case  SSID_GREATER:
-		case  SSID_LESS_EQUAL:
-		case  SSID_GREATER_EQUAL:
-		case  SSID_LEFT_SHIFT:
-		case  SSID_RIGHT_SHIFT:
-		case  SSID_ADDITION:
-		case  SSID_SUBTRACTION:
-		case  SSID_MULTIPLICATION:
-		case  SSID_DIVISION:
-		case  SSID_PERCENT:
-		case  SSID_SHARP:
-		case  SSID_LEFT_PARENTHESIS:
-			return true;
+	case  SSID_LOGIC_OR:
+	case  SSID_LOGIC_AND:
+	case  SSID_LOGIC_NOT:
+	case  SSID_BITWISE_OR:
+	case  SSID_BITWISE_XOR:
+	case  SSID_BITWISE_AND:
+	case  SSID_EQUAL:
+	case  SSID_NOT_EQUAL:
+	case  SSID_LESS:
+	case  SSID_GREATER:
+	case  SSID_LESS_EQUAL:
+	case  SSID_GREATER_EQUAL:
+	case  SSID_LEFT_SHIFT:
+	case  SSID_RIGHT_SHIFT:
+	case  SSID_ADDITION:
+	case  SSID_SUBTRACTION:
+	case  SSID_MULTIPLICATION:
+	case  SSID_DIVISION:
+	case  SSID_PERCENT:
+	case  SSID_SHARP:
+	case  SSID_LEFT_PARENTHESIS:
+		return true;
 	}
 	return false;
 }
@@ -97,55 +100,60 @@ static bool GetRealPath(const CC_STRING& name, CC_STRING& opath)
 	return ! opath.isnull() ;
 }
 
-static inline bool operator >= (const CToken& a, const CToken& b)
+static inline bool operator >= (const SynToken& a, const SynToken& b)
 {
-	if(a.attr == CToken::TA_UINT && b.attr == CToken::TA_UINT)
+	if(a.attr == SynToken::TA_UINT && b.attr == SynToken::TA_UINT)
 		return a.u32_val >= b.u32_val;
-	if( (a.attr == CToken::TA_UINT && b.attr == CToken::TA_INT) ||
-		(a.attr == CToken::TA_INT && b.attr == CToken::TA_UINT) ||
-		(a.attr == CToken::TA_INT && b.attr == CToken::TA_INT))
+	if( (a.attr == SynToken::TA_UINT && b.attr == SynToken::TA_INT) ||
+		(a.attr == SynToken::TA_INT && b.attr == SynToken::TA_UINT) ||
+		(a.attr == SynToken::TA_INT && b.attr == SynToken::TA_INT))
 		return a.i32_val >= b.i32_val;
 	assert(0);
 }
 
-static inline bool operator > (const CToken& a, const CToken& b)
+static inline bool operator > (const SynToken& a, const SynToken& b)
 {
-	if(a.attr == CToken::TA_UINT && b.attr == CToken::TA_UINT)
+	if(a.attr == SynToken::TA_UINT && b.attr == SynToken::TA_UINT)
 		return a.u32_val > b.u32_val;
-	if( (a.attr == CToken::TA_UINT && b.attr == CToken::TA_INT) ||
-		(a.attr == CToken::TA_INT && b.attr == CToken::TA_UINT) ||
-		(a.attr == CToken::TA_INT && b.attr == CToken::TA_INT))
+	if( (a.attr == SynToken::TA_UINT && b.attr == SynToken::TA_INT) ||
+		(a.attr == SynToken::TA_INT && b.attr == SynToken::TA_UINT) ||
+		(a.attr == SynToken::TA_INT && b.attr == SynToken::TA_INT))
 		return a.i32_val > b.i32_val;
 	assert(0);
 }
 
 
-static inline bool operator == (const CToken& a, uint32_t val)
+static inline bool operator == (const SynToken& a, uint32_t val)
 {
 	return a.u32_val == val;
 }
 
 
-static inline bool operator != (const CToken& a, uint32_t val)
+static inline bool operator != (const SynToken& a, uint32_t val)
 {
 	return a.u32_val != val;
 }
 
 
-static bool DoCalculate(CToken& opnd1, sym_t opr, CToken& opnd2, CToken& result, TCC_CONTEXT *tc, CException *ex)
+static bool DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& result, ParsedState *pstate, Exception *ex)
 {
 	if( gv_preprocess_mode ) {
-		if(opnd1.attr == CToken::TA_IDENT) {
-			opnd1.attr    = CToken::TA_UINT;
+		if(opnd1.attr == SynToken::TA_IDENT) {
+			opnd1.attr    = SynToken::TA_UINT;
 			opnd1.u32_val = 0;
 		}
-		if((opr != SSID_LOGIC_NOT && opr != SSID_BITWISE_NOT) && opnd2.attr == CToken::TA_IDENT  ) {
-			opnd2.attr    = CToken::TA_UINT;
+		if((opr != SSID_LOGIC_NOT && opr != SSID_BITWISE_NOT) && opnd2.attr == SynToken::TA_IDENT  ) {
+			opnd2.attr    = SynToken::TA_UINT;
 			opnd2.u32_val = 0;
+		}
+	} else {
+		if(opnd1.attr == SynToken::TA_IDENT || opnd2.attr == SynToken::TA_IDENT) {
+			result.attr = SynToken::TA_IDENT;
+			return true;
 		}
 	}
 
-	result.attr = CToken::TA_UINT;
+	result.attr = SynToken::TA_UINT;
 	switch(opr) {
 	case SSID_LOGIC_AND:
 		result.b_val = opnd1.b_val && opnd2.b_val;
@@ -218,33 +226,33 @@ static bool DoCalculate(CToken& opnd1, sym_t opr, CToken& opnd2, CToken& result,
 		result.u32_val = opnd1.u32_val >> opnd2.u32_val;
 		break;
 	default:
-		ex->format("Invalid operator %s", TR(tc,opr));
+		ex->format("Invalid operator %s", TR(pstate,opr));
 		goto error;
 	}
 	return true;
 
 error:
-	result.attr = CToken::TA_IDENT;
+	result.attr = SynToken::TA_IDENT;
 	result.id   = SSID_SYMBOL_X;
 	return false;
 }
 
-static bool DoCalculationOnStackTop(TCC_CONTEXT *tc, sym_t opr, CC_STACK<CToken>& opnd_stack,
-	CC_STACK<sym_t>& opr_stack, CException *gex)
+static bool DoCalculationOnStackTop(ParsedState *pstate, sym_t opr, CC_STACK<SynToken>& opnd_stack,
+	CC_STACK<sym_t>& opr_stack, Exception *excep)
 {
-	CToken a, b;
-	CToken result = { SSID_SYMBOL_X, CToken::TA_UINT };
+	SynToken a, b;
+	SynToken result = { SSID_SYMBOL_X, SynToken::TA_UINT };
 
 	if( opr == SSID_COLON ) {
-		CToken c;
+		SynToken c;
 		sym_t tmp_opr = SSID_INVALID;
 		if(opnd_stack.size() < 3) {
-			*gex = "Not enough operands for `? :'";
+			*excep = "Not enough operands for `? :'";
 			return false;
 		}
 		opr_stack.pop(tmp_opr);
 		if(tmp_opr != SSID_QUESTION) {
-			*gex = "Invalid operator `:'";
+			*excep = "Invalid operator `:'";
 			return false;
 		}
 		opnd_stack.pop(c);
@@ -257,13 +265,13 @@ static bool DoCalculationOnStackTop(TCC_CONTEXT *tc, sym_t opr, CC_STACK<CToken>
 	} else if( opr != SSID_LOGIC_NOT && opr != SSID_BITWISE_NOT ) {
 		if( ! opnd_stack.pop(b) || ! opnd_stack.pop(a))
 			goto error_no_operands;
-		log(LOGV_DEBUG, "%s %s %s\n", TOKEN_NAME(a), TR(tc,opr), TOKEN_NAME(b));
+		log(LOGV_DEBUG, "%s %s %s\n", TOKEN_NAME(a), TR(pstate,opr), TOKEN_NAME(b));
 	} else {
 		if( ! opnd_stack.pop(a) )
 			goto error_no_operands;
 		log(LOGV_DEBUG, "! %s\n", TOKEN_NAME(a));
 	}
-	if( ! DoCalculate(a, opr, b, result, tc, gex) ) {
+	if( ! DoCalculate(a, opr, b, result, pstate, excep) ) {
 		return false;
 	}
 done:
@@ -271,7 +279,7 @@ done:
 	return true;
 
 error_no_operands:
-	gex->format("Not enough operands for opeator '%s'", TR(tc,opr));
+	excep->format("Not enough operands for opeator '%s'", TR(pstate,opr));
 	return false;
 }
 
@@ -281,29 +289,29 @@ static bool is_opr(sym_t sym)
 }
 
 
-static int symbol_definition_check(TCC_CONTEXT *tc, const char *line, bool reverse, CToken *result, CException *gex)
+static int symbol_definition_check(ParsedState *pstate, const char *line, bool reverse, SynToken *result, Exception *excep)
 {
-	short attr = CToken::TA_IDENT;
+	short attr = SynToken::TA_IDENT;
 	int retval = TSV_X;
-	CToken token;
-	CMacro *minfo;
+	SynToken token;
+	SynMacro *minfo;
 
-	if( ! ReadToken(tc, &line, &token, gex, false) || gex->GetError() != NULL )
+	if( ! ReadToken(pstate, &line, &token, excep, false) || excep->GetError() != NULL )
 		goto error;
-	minfo = tc->maMap.Lookup(token.id);
+	minfo = pstate->maLut.Lookup(token.id);
 	if( ! gv_preprocess_mode ) {
 		if(minfo == NULL) {
 			retval = TSV_X;
-			attr   = CToken::TA_IDENT;
-		} else if(minfo == CMacro::NotDef) {
+			attr   = SynToken::TA_IDENT;
+		} else if(minfo == SynMacro::NotDef) {
 			retval = reverse ? TSV_1 : TSV_0;
-			attr   = CToken::TA_UINT;
+			attr   = SynToken::TA_UINT;
 		} else {
 			retval = reverse ? TSV_0 : TSV_1;
-			attr   = CToken::TA_UINT;
+			attr   = SynToken::TA_UINT;
 		}
 	} else {
-		attr    = CToken::TA_UINT;
+		attr    = SynToken::TA_UINT;
 		retval  = (minfo == NULL) ? TSV_0 : TSV_1;
 		retval ^= reverse;
 	}
@@ -313,25 +321,16 @@ error:
 		result->attr    = attr;
 		result->u32_val = retval;
 		result->id      = SSID_SYMBOL_X;
-		result->name    = TR(tc, SSID_SYMBOL_X);
+		result->name    = TR(pstate, SSID_SYMBOL_X);
 	}
 	if( gv_preprocess_mode )
 		assert(retval != TSV_X);
 	return retval;
 }
 
-static bool contain(const CC_ARRAY<CC_STRING>& hints, const CC_STRING& line)
+static int expression_evaluate(ParsedState *pstate, const char *line, Exception *excep)
 {
-	size_t i;
-	for(i = 0; i < hints.size(); i++)
-		if( strstr(line.c_str(), hints[i].c_str()) != NULL )
-			return true;
-	return false;
-}
-
-static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *gex)
-{
-	static const char opp[] = { '=', '>', '<', 'X'};
+	static const char opp[] = { '<', '=', '>', 'X'};
 	const char *saved_line = line;
 	enum {
 		STAT_INIT,
@@ -343,19 +342,34 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 		STAT_DEFINED2, /* defined(X  */
 	} state;
 	CC_STACK<sym_t>  opr_stack;
-	CC_STACK<CToken>  opnd_stack;
+	CC_STACK<SynToken>  opnd_stack;
 	sym_t last_opr = SSID_SHARP;
-	CToken last_token;
+	SynToken last_token;
 	char sign;
 	const char *symbol = NULL;
 	LOG_VERB dml = LOGV_DEBUG;
 	CC_STRING expansion;
-	CException ex2;
+	Exception ex2;
+
+	if(!gv_preprocess_mode) {
+		/*
+		 *  Keep `#if 0' blocks which are usually user comments.
+		 */
+		char *copied_line = strdup(line);
+		const char *first = strtok(copied_line, " \t");
+		int ignore = 0;
+		/* Simple code and work properly in most cases */
+		if(first && first[0] == '0')
+			ignore = 1;
+		free(copied_line);
+		if(ignore)
+			return TSV_X;
+	}
 
 	skip_blanks(saved_line);
 
-	expansion = ExpandLine(tc, false, line, gex);
-	if(gex->GetError() != NULL) {
+	expansion = ExpandLine(pstate, false, line, excep);
+	if(excep->GetError() != NULL) {
 		return TSV_X;
 	}
 
@@ -366,22 +380,22 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 	state = STAT_OPR1;
 	while(1) {
 		sym_t  opr;
-		CToken  token;
+		SynToken  token;
 		const char *last_pos = line;
 
-		if( ! ReadToken(tc, &line, &token, gex, false) )
+		if( ! ReadToken(pstate, &line, &token, excep, false) )
 			break;
-		if( gex->GetError() != NULL )
+		if( excep->GetError() != NULL )
 			goto error;
-		if( token.attr == CToken::TA_CHAR )
-			token.attr = CToken::TA_INT;
+		if( token.attr == SynToken::TA_CHAR )
+			token.attr = SynToken::TA_INT;
 		if( sign != 0 ) {
-			if(token.attr != CToken::TA_UINT) {
-				gex->format("%s following %c", TR(tc,token.id), sign);
+			if(token.attr != SynToken::TA_UINT) {
+				excep->format("%s following %c", TR(pstate,token.id), sign);
 				goto error;
 			}
 			if(sign == '-') {
-				token.attr = CToken::TA_INT;
+				token.attr = SynToken::TA_INT;
 				token.i32_val = -token.i32_val;
 			}
 			sign = 0;
@@ -396,14 +410,14 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 				state = STAT_OPR1;
 			else if(token.id == SSID_DEFINED)
 				state = STAT_DEFINED;
-			else if(token.attr == CToken::TA_IDENT)
+			else if(token.attr == SynToken::TA_IDENT)
 				state = STAT_OPND;
 			break;
 		case STAT_OPND:
 			if(is_opr(token.id))
 				state = STAT_OPR1;
 			else {
-				*gex = "Adjacent operands";
+				*excep = "Adjacent operands";
 				goto error;
 			}
 			break;
@@ -425,32 +439,32 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 		case STAT_DEFINED:
 			if(token.id == SSID_LEFT_PARENTHESIS)
 				state = STAT_DEFINED1;
-			else if(token.attr == CToken::TA_IDENT) {
-				symbol_definition_check(tc, last_pos, false, &token, gex);
-				if(gex->GetError() != NULL)
+			else if(token.attr == SynToken::TA_IDENT) {
+				symbol_definition_check(pstate, last_pos, false, &token, excep);
+				if(excep->GetError() != NULL)
 					goto error;
 				state = STAT_INIT;
 			}
 			break;
 		case STAT_DEFINED1:
-			if(token.attr == CToken::TA_IDENT) {
+			if(token.attr == SynToken::TA_IDENT) {
 				state = STAT_DEFINED2;
 				symbol = last_pos;
 			} else {
-				*gex = "Syntax error: ";
+				*excep = "Syntax error: ";
 				goto error;
 			}
 			break;
 		case STAT_DEFINED2:
 			if(token.id == SSID_RIGHT_PARENTHESIS) {
-				symbol_definition_check(tc, symbol, false, &token, gex);
-				if(gex->GetError() != NULL)
+				symbol_definition_check(pstate, symbol, false, &token, excep);
+				if(excep->GetError() != NULL)
 					goto error;
 				state = STAT_INIT;
 				opnd_stack.push(token);
 				goto next;
 			} else {
-				*gex = "Unmatched (";
+				*excep = "Unmatched (";
 				goto error;
 			}
 			break;
@@ -458,10 +472,10 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 		if(state == STAT_DEFINED || state == STAT_DEFINED1 || state == STAT_DEFINED2)
 			goto next;
 
-		if( token.id == CToken::TA_UINT || token.id == CToken::TA_INT )
+		if( token.id == SynToken::TA_UINT || token.id == SynToken::TA_INT )
 			log(dml, "Current: %u\n", token.u32_val);
 		else
-			log(dml, "Current: %s\n", TR(tc,token.id));
+			log(dml, "Current: %s\n", TR(pstate,token.id));
 //		log(dml, "OPR  Stack: \n", opr_stack);
 //		log(dml, "OPND Stack: \n", opnd_stack);
 		opr = token.id;
@@ -470,25 +484,25 @@ static int expression_evaluate(TCC_CONTEXT *tc, const char *line, CException *ge
 			int result;
 again:
 			opr0 = opr_stack.top();
-			result = tc->opMap.Compare(opr0, opr);
-			log(dml, "Compare: %s %c %s\n", TR(tc,opr0),opp[result],TR(tc,opr));
+			result = pstate->opMat.Compare(opr0, opr);
+			log(dml, "Compare: %s %c %s\n", TR(pstate,opr0),opp[1+result],TR(pstate,opr));
 			switch(result) {
-			case OP_EQUAL:
+			case _EQ:
 				opr_stack.pop(opr0);
 				break;
-			case OP_HIGHER:
+			case _GT:
 				opr_stack.pop(opr0);
-				if( ! DoCalculationOnStackTop(tc, opr0, opnd_stack, opr_stack, &ex2) ) {
-					*gex = ex2;
+				if( ! DoCalculationOnStackTop(pstate, opr0, opnd_stack, opr_stack, &ex2) ) {
+					*excep = ex2;
 					goto error;
 				}
 				goto again;
-			case OP_LOWER:
+			case _LT:
 				opr_stack.push(opr);
 				break;
-			case OP_ERROR:
-				gex->format("Cannot compare \"%s\" and \"%s\"", TR(tc,opr0), TR(tc,opr));
-				log(LOGV_ERROR, "*ERROR* %s\n", gex->GetError());
+			case _XX:
+				excep->format("Cannot compare \"%s\" and \"%s\"", TR(pstate,opr0), TR(pstate,opr));
+				log(LOGV_ERROR, "*ERROR* %s\n", excep->GetError());
 				goto error;
 			}
 		} else {
@@ -505,54 +519,54 @@ again:
 
 		if( ! opr_stack.pop(opr0) )
 			goto error;
-		result = tc->opMap.Compare(opr0, SSID_SHARP);
-		log(dml, "Compare: %s %c #\n", TR(tc,opr0),opp[result]);
+		result = pstate->opMat.Compare(opr0, SSID_SHARP);
+		log(dml, "Compare: %s %c #\n", TR(pstate,opr0),opp[result]);
 		switch(result) {
-		case OP_EQUAL:
+		case _EQ:
 			break;
-		case OP_HIGHER:
-			if( ! DoCalculationOnStackTop(tc, opr0, opnd_stack, opr_stack, &ex2) ) {
-				*gex = ex2;
+		case _GT:
+			if( ! DoCalculationOnStackTop(pstate, opr0, opnd_stack, opr_stack, &ex2) ) {
+				*excep = ex2;
 				goto error;
 			}
 			break;
 		default:
 			log(LOGV_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
-			*gex = "[1] Bad expression";
+			*excep = "[1] Bad expression";
 			goto error;
 		}
 	} while( opr_stack.size() != 0 );
 
 	if( opnd_stack.size() != 1 ) {
 		log(LOGV_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
-		*gex = "[2] Bad expression";
+		*excep = "[2] Bad expression";
 		goto error;
 	}
 
-	if( opnd_stack.top().attr == CToken::TA_IDENT ) {
+	if( opnd_stack.top().attr == SynToken::TA_IDENT ) {
 		if( gv_preprocess_mode ) {
-			*gex = ex2;
+			*excep = ex2;
 			return TSV_0;
 		}
 		return TSV_X;
 	}
 	log(dml, "Numberic Value: %u\n", opnd_stack.top().i32_val);;
-	*gex = "";
+	*excep = "";
 	return !!opnd_stack.top().i32_val;
 
 error:
-	log(LOGV_ERROR, "*Error* %s\n", gex->GetError());
+	log(LOGV_ERROR, "*Error* %s\n", excep->GetError());
 	return gv_preprocess_mode ? TSV_0 : TSV_X;
 }
 
 /*----------------------------------------------------------------------------------*/
 
 #if SANITY_CHECK
-const char CCodeLess::CIncludedFile::CCond::TAG[4] = "C\x0\x1";
-const char CCodeLess::CIncludedFile::CCondChain::TAG[4] = "CC\x0";
+const char Parser::IncludedFile::Cond::TAG[4] = "C\x0\x1";
+const char Parser::IncludedFile::CondChain::TAG[4] = "CC\x0";
 #endif
 
-void CCodeLess::CIncludedFile::CWalkThrough::enter_conditional(CCond *c)
+void Parser::IncludedFile::WalkThrough::enter_conditional(Cond *c)
 {
 	CListEntry *i, *j;
 
@@ -561,7 +575,7 @@ void CCodeLess::CIncludedFile::CWalkThrough::enter_conditional(CCond *c)
 		on_conditional_callback(context, c, rh);
 	for(i = c->sub_chains.next; i != &c->sub_chains; i = j) {
 		j = i->next;
-		enter_conditional_chain(container_of(i, CCondChain, link));
+		enter_conditional_chain(container_of(i, CondChain, link));
 	}
 	if(method == MED_DF && on_conditional_callback)
 		on_conditional_callback(context, c, rh);
@@ -569,18 +583,18 @@ void CCodeLess::CIncludedFile::CWalkThrough::enter_conditional(CCond *c)
 }
 
 
-void CCodeLess::CIncludedFile::CWalkThrough::dump_and_exit(CCondChain *cc, const char *msg)
+void Parser::IncludedFile::WalkThrough::dump_and_exit(CondChain *cc, const char *msg)
 {
 	CListEntry *i;
 	for(i = cc->chain.next; i != &cc->chain; i = i->next) {
-		CCond *c = container_of(i, CCond, link);
+		Cond *c = container_of(i, Cond, link);
 		log(LOGV_RUNTIME, "%s:%u: %u\n", c->filename, c->begin, c->value);
 	}
 	log(LOGV_RUNTIME, "%s\n", msg);
 	exit(1);
 }
 
-void CCodeLess::CIncludedFile::CWalkThrough::enter_conditional_chain(CCondChain *cc)
+void Parser::IncludedFile::WalkThrough::enter_conditional_chain(CondChain *cc)
 {
 	CListEntry *i, *j;
 #if SANITY_CHECK
@@ -592,10 +606,10 @@ void CCodeLess::CIncludedFile::CWalkThrough::enter_conditional_chain(CCondChain 
 		on_conditional_chain_callback(context, cc);
 	for(i = cc->chain.next; i != &cc->chain; i = j) {
 		j = i->next;
-		CCond *c = container_of(i, CCond, link);
+		Cond *c = container_of(i, Cond, link);
 #if SANITY_CHECK
 		sum += c->value;
-		has_else += (c->type == CCond::CT_ELSE);
+		has_else += (c->type == Cond::CT_ELSE);
 #endif
 		c->sanity_check();
 		enter_conditional(c);
@@ -613,7 +627,7 @@ void CCodeLess::CIncludedFile::CWalkThrough::enter_conditional_chain(CCondChain 
 		on_conditional_chain_callback(context, cc);
 }
 
-CCodeLess::CIncludedFile::CWalkThrough::CWalkThrough(CCond *rc, WT_METHOD method_,
+Parser::IncludedFile::WalkThrough::WalkThrough(Cond *rc, WT_METHOD method_,
 	ON_CONDITIONAL_CHAIN_CALLBACK callback1, ON_CONDITIONAL_CALLBACK callback2, void *context_ )
 {
 	method    = method_;
@@ -624,7 +638,7 @@ CCodeLess::CIncludedFile::CWalkThrough::CWalkThrough(CCond *rc, WT_METHOD method
 	enter_conditional(rc);
 }
 
-void CCodeLess::CIncludedFile::delete_conditional(void *context, CCond *c, int rh)
+void Parser::IncludedFile::delete_conditional(void *context, Cond *c, int rh)
 {
 #if SANITY_CHECK
 	if(c->end == INV_LN) {
@@ -637,18 +651,18 @@ void CCodeLess::CIncludedFile::delete_conditional(void *context, CCond *c, int r
 	delete c;
 }
 
-void CCodeLess::CIncludedFile::delete_conditional_chain(void *context, CCondChain *cc)
+void Parser::IncludedFile::delete_conditional_chain(void *context, CondChain *cc)
 {
 	(void)context;
 	delete cc;
 }
 
-void CCodeLess::CIncludedFile::save_conditional(CCond *c, int rh)
+void Parser::IncludedFile::save_conditional(Cond *c, int rh)
 {
 	CC_STRING tmp;
 	static const char *directives[] = {NULL, "if", "elif", "else"};
 
-	assert(c->type <= CCond::CT_ELSE);
+	assert(c->type <= Cond::CT_ELSE);
 	if(directives[c->type]) {
 		if(c->boff)
 			tmp.format("  %-4u %s %s %u,%d %u\n", rh, directives[c->type], (c->value ? "true" : "false"), c->begin, c->boff, c->end);
@@ -658,35 +672,35 @@ void CCodeLess::CIncludedFile::save_conditional(CCond *c, int rh)
 	}
 }
 
-void CCodeLess::CIncludedFile::save_conditional(void *context, CCond *c, int rh)
+void Parser::IncludedFile::save_conditional(void *context, Cond *c, int rh)
 {
-	((CIncludedFile*)context)->save_conditional(c, rh);
+	((IncludedFile*)context)->save_conditional(c, rh);
 }
 
-void CCodeLess::CIncludedFile::produce_cr_text()
+void Parser::IncludedFile::produce_cr_text()
 {
 	if(!virtual_root->sub_chains.IsEmpty()) {
 		CC_STRING apath;
 		GetRealPath(ifile->name, apath);
 		cr_text = apath;
 		cr_text += "\n";
-		CWalkThrough(virtual_root, CWalkThrough::MED_BF, NULL, save_conditional, this);
+		WalkThrough(virtual_root, WalkThrough::MED_BF, NULL, save_conditional, this);
 	}
 }
 
-CCodeLess::CIncludedFile::~CIncludedFile()
+Parser::IncludedFile::~IncludedFile()
 {
-	CWalkThrough(virtual_root, CWalkThrough::MED_DF, delete_conditional_chain, delete_conditional, NULL);
+	WalkThrough(virtual_root, WalkThrough::MED_DF, delete_conditional_chain, delete_conditional, NULL);
 	delete ifile;
 }
 
-const char *CCodeLess::preprocessors[] = {
+const char *Parser::preprocessors[] = {
 	"#define", "#undef",
 	"#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif",
 	"#include", "#include_next"
 };
 
-TRI_STATE CCodeLess::superior_conditional_value(bool on_if)
+TRI_STATE Parser::superior_conditional_value(bool on_if)
 {
 	const size_t n = on_if ? 0 : 1;
 	CConditionalChain **top;
@@ -694,7 +708,7 @@ TRI_STATE CCodeLess::superior_conditional_value(bool on_if)
 	return conditionals.size() == n ? TSV_1 : (top = &(conditionals.top()) - n, (*top)->eval_condition());
 }
 
-CC_STRING CCodeLess::do_elif(int mode)
+CC_STRING Parser::do_elif(int mode)
 {
 	CC_STRING output;
 	CC_STRING trailing;
@@ -724,7 +738,7 @@ CC_STRING CCodeLess::do_elif(int mode)
 }
 
 
-void CCodeLess::AddDependency(const char *prefix, const CC_STRING& filename)
+void Parser::AddDependency(const char *prefix, const CC_STRING& filename)
 {
 	CC_STRING rp;
 
@@ -753,7 +767,7 @@ static CC_STRING MakeSemaName(const CC_STRING& filename)
 }
 
 
-void CCodeLess::do_define(const char *line)
+void Parser::do_define(const char *line)
 {
 	const char *p;
 	CC_STRING word;
@@ -765,45 +779,43 @@ void CCodeLess::do_define(const char *line)
 		word = *p++;
 		while( isalpha(*p) || *p == '_' || isdigit(*p) )
 			word += *p++;
-		mid = tc->syMap.Put(word);
-		CMacro *ma  = (CMacro*) malloc(sizeof(*ma));
+		mid = pstate->syLut.Put(word);
+		SynMacro *ma  = (SynMacro*) malloc(sizeof(*ma));
 		ma->id      = SSID_INVALID;
 		ma->line    = strdup(line);
 		ma->parsed  = NULL;
 		ma->va_args = false;
-		tc->maMap.Put(mid, ma);
-		assert(tc->maMap.Lookup(mid) != NULL);
-		if( dx_traced_macros.size() > 0 && find(dx_traced_macros, word))
-			log(LOGV_RUNTIME, "%s:%u:  %s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), raw_line.c_str());
+		pstate->maLut.Put(mid, ma);
+		assert(pstate->maLut.Lookup(mid) != NULL);
 	}
 }
 
-CFile *CCodeLess::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf, bool& in_compiler_dir)
+File *Parser::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf, bool& in_compiler_dir)
 {
 	bool quoted = true;
 	CC_STRING ifpath, itoken, iline;
-	CFile *retval = NULL;
+	File *retval = NULL;
 
-	iline = ExpandLine(tc, true, line, &gex);
-	if(gex.GetError() != NULL)
+	iline = ExpandLine(pstate, true, line, &excep);
+	if(excep.GetError() != NULL)
 		goto done;
 
 	itoken = GetIncludeFileName(iline, quoted);
 	iline.clear();
 	if( itoken.isnull() ) {
-		gex.format("Invalid include preprocessor: %s", raw_line.c_str());
+		excep.format("Invalid include preprocessor: %s", raw_line.c_str());
 		goto done;
 	}
 	ifpath = rtc->get_include_file_path(itoken, GetCurrentFileName(),
 		quoted, preprocessor == SSID_SHARP_INCLUDE_NEXT, &in_compiler_dir);
 	if(ifpath.isnull()) {
-		gex.format("Cannot find include file \"%s\"", itoken.c_str());
+		excep.format("Cannot find include file \"%s\"", itoken.c_str());
 		goto done;
 	}
 
-	CRealFile *file;
+	RealFile *file;
 	new_line = raw_line;
-	file = new CRealFile;
+	file = new RealFile;
 	file->SetFileName(ifpath);
 	retval = file;
 	*outf = NULL;
@@ -815,19 +827,19 @@ done:
 }
 
 
-bool CCodeLess::do_include(sym_t preprocessor, const char *line, const char **output)
+bool Parser::do_include(sym_t preprocessor, const char *line, const char **output)
 {
 	FILE *outf;
-	CFile *file;
+	File *file;
 	bool in_compiler_dir;
 
 	file = GetIncludedFile(preprocessor, line, &outf, in_compiler_dir);
 	if( file == NULL )
 		return false;
 	if(file->Open()) {
-		PushIncludedFile(file, NULL, COUNT_OF(CCodeLess::preprocessors), in_compiler_dir, conditionals.size());
+		PushIncludedFile(file, NULL, COUNT_OF(Parser::preprocessors), in_compiler_dir, conditionals.size());
 	} else {
-		gex.format("Cannot open `%s'", file->name.c_str());
+		excep.format("Cannot open `%s'", file->name.c_str());
 		return false;
 	}
 
@@ -835,7 +847,7 @@ bool CCodeLess::do_include(sym_t preprocessor, const char *line, const char **ou
 	return true;
 }
 
-bool CCodeLess::SM_Run()
+bool Parser::SM_Run()
 {
 	FILE *out_fp = included_files.top()->ofile;
 	const char *pos;
@@ -850,26 +862,26 @@ bool CCodeLess::SM_Run()
 	dv_current_file = GetCurrentFileName().c_str();
 	dv_current_line = GetCurrentLineNumber();
 
-//	GDB_TRAP2(strstr(dv_current_file,"lib/memset.S"), (dv_current_line==31));
+//	GDB_TRAP2(strstr(dv_current_file,"parser/gpsconst.h"), (dv_current_line==50));
 	switch(preprocessor) {
 	case SSID_SHARP_IF:
 		if( superior_conditional_value(true) != TSV_0 )
-			result = (TRI_STATE) expression_evaluate(tc, pos, &gex);
+			result = (TRI_STATE) expression_evaluate(pstate, pos, &excep);
 		goto handle_if_branch;
 
 	case SSID_SHARP_IFNDEF:
 		if( superior_conditional_value(true) != TSV_0 )
-			result = (TRI_STATE) symbol_definition_check(tc, pos, true, NULL, &gex);
+			result = (TRI_STATE) symbol_definition_check(pstate, pos, true, NULL, &excep);
 		goto handle_if_branch;
 
 	case SSID_SHARP_IFDEF:
 		if( superior_conditional_value(true) != TSV_0 )
-			result = (TRI_STATE) symbol_definition_check(tc, pos, false, NULL, &gex);
+			result = (TRI_STATE) symbol_definition_check(pstate, pos, false, NULL, &excep);
 
 handle_if_branch:
 		if( result == TSV_X ) {
 			if( gv_preprocess_mode ) {
-				gex = "Error on processing conditional";
+				excep = "Error on processing conditional";
 				goto done;
 			}
 		}
@@ -894,7 +906,7 @@ handle_if_branch:
 			included_files.top()->add_elif(false);
 			goto done;
 		}
-		result = (TRI_STATE) expression_evaluate(tc, pos, &gex);
+		result = (TRI_STATE) expression_evaluate(pstate, pos, &excep);
 		if( gv_preprocess_mode && result == TSV_X)
 			goto done;
 
@@ -941,7 +953,7 @@ handle_if_branch:
 		if( ! upper_chain()->keep_endif() )
 			output = NULL;
 		if( conditionals.size() == 0 ) {
-			gex = "Unmatched #endif";
+			excep = "Unmatched #endif";
 			goto done;
 		}
 		conditionals.pop(c);
@@ -959,7 +971,7 @@ handle_if_branch:
 			do_define(pos);
 			break;
 		  case SSID_SHARP_UNDEF:
-			handle_undef(tc, pos);
+			handle_undef(pstate, pos);
 			break;
 		  case SSID_SHARP_INCLUDE:
 		  case SSID_SHARP_INCLUDE_NEXT:
@@ -969,8 +981,8 @@ handle_if_branch:
 		  default:
 			if(rtm_expand_macros) {
 				pos = line.c_str();
-				expanded_line = ExpandLine(tc, false, pos, &gex);
-				if(gex.GetError() != NULL)
+				expanded_line = ExpandLine(pstate, false, pos, &excep);
+				if(excep.GetError() != NULL)
 					return false;
 				expanded_line += '\n';
 				output = expanded_line.c_str();
@@ -984,8 +996,8 @@ print_and_exit:
 done:
 
 	comment_start = -1;
-	if(gv_preprocess_mode && gex.GetError()) {
-		CIncludedFile *tmp;
+	if(gv_preprocess_mode && excep.GetError()) {
+		IncludedFile *tmp;
 		CC_STRING pmsg, ts;
 		while(included_files.size() > 0) {
 			included_files.pop(tmp);
@@ -993,16 +1005,16 @@ done:
 			pmsg += ts;
 		}
 		if( !pmsg.isnull() )
-			gex.AddPrefix(pmsg);
+			excep.AddPrefix(pmsg);
 	}
-	return gv_preprocess_mode ? (gex.GetError() == NULL) : true;
+	return gv_preprocess_mode ? (excep.GetError() == NULL) : true;
 }
 
 
-void CCodeLess::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx)
+void Parser::Reset(ParsedState *pstate, size_t num_preprocessors, ParserContext *ctx)
 {
 	this->num_preprocessors = num_preprocessors;
-	this->tc                = tc;
+	this->pstate                = pstate;
 	this->rtc             = ctx;
 
 	assert(included_files.size() == 0);
@@ -1011,17 +1023,17 @@ void CCodeLess::Reset(TCC_CONTEXT *tc, size_t num_preprocessors, CP_CONTEXT *ctx
 	line.clear();
 	deptext.clear();
 	comment_start = -1;
-	gex = "";
+	excep = "";
 	errmsg.clear();
 }
 
-static inline int is_arithmetic_operator(const CToken& token)
+static inline int is_arithmetic_operator(const SynToken& token)
 {
 	/* This is a tricky hack! */
 	return (token.id > SSID_COMMA && token.id < SSID_I);
 }
 
-static inline int get_sign(const CToken& token)
+static inline int get_sign(const SynToken& token)
 {
 	if(token.id == SSID_ADDITION)
 		return 1;
@@ -1030,7 +1042,7 @@ static inline int get_sign(const CToken& token)
 	return 0;
 }
 
-sym_t CCodeLess::GetPreprocessor(const char *line, const char **pos)
+sym_t Parser::GetPreprocessor(const char *line, const char **pos)
 {
 	const char *p;
 	CC_STRING word;
@@ -1050,7 +1062,7 @@ sym_t CCodeLess::GetPreprocessor(const char *line, const char **pos)
 	*pos = p;
 	for(size_t i = 0; i < num_preprocessors; i++)
 		if( word == preprocessors[i] )
-			return tc->syMap.Put(preprocessors[i]);
+			return pstate->syLut.Put(preprocessors[i]);
 	return SSID_INVALID;
 }
 
@@ -1058,7 +1070,7 @@ sym_t CCodeLess::GetPreprocessor(const char *line, const char **pos)
 //
 // Read and unfold one semantic line from the source file, stripping off any coments.
 //
-int CCodeLess::ReadLine()
+int Parser::ReadLine()
 {
 	enum {
 		STAT_INIT,
@@ -1075,7 +1087,7 @@ int CCodeLess::ReadLine()
 	} state;
 	int c;
 	int foldcnt = 0;
-	CFile *file = GetCurrentFile().ifile;
+	File *file = GetCurrentFile().ifile;
 
 	state = STAT_INIT;
 	while(1) {
@@ -1085,7 +1097,7 @@ int CCodeLess::ReadLine()
 				return 0;
 			c = '\n';
 			if(state != STAT_INIT) {
-				gex = "Syntax error found";
+				excep = "Syntax error found";
 				return -1;
 			}
 			goto handle_last_line;
@@ -1214,13 +1226,11 @@ handle_last_line:
 				break;
 		}
 	}
-	if(file->name.find("gen_probe.c") >= 0 && foldcnt)
-		fprintf(stderr, "%zu %d\n", file->line, -foldcnt);
 	file->offset = -foldcnt;
 	return 1;
 }
 
-bool CCodeLess::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
+bool Parser::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np)
 {
 	if( ifiles.size() == 0)
 		return true;
@@ -1230,15 +1240,15 @@ bool CCodeLess::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t
 	for(size_t i = 0; i < ifiles.size(); i++) {
 		path = rtc->get_include_file_path(ifiles[i], CC_STRING(""), true, false, &in_compiler_dir);
 		if( path.isnull() ) {
-			gex.format("Can not find include file \"%s\"", ifiles[i].c_str());
+			excep.format("Can not find include file \"%s\"", ifiles[i].c_str());
 			return false;
 		}
-		CRealFile *file;
-		file = new CRealFile;
+		RealFile *file;
+		file = new RealFile;
 		file->SetFileName(path);
 
 		if( ! file->Open() ) {
-			gex.format("Can not open include file \"%s\"", ifiles[i].c_str());
+			excep.format("Can not open include file \"%s\"", ifiles[i].c_str());
 			return false;
 		}
 		PushIncludedFile(file, NULL, np, in_compiler_dir, conditionals.size());
@@ -1251,7 +1261,7 @@ bool CCodeLess::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t
 	return true;
 }
 
-bool CCodeLess::RunEngine(size_t cond)
+bool Parser::RunEngine(size_t cond)
 {
 	if(included_files.size() == cond)
 		return true;
@@ -1263,7 +1273,7 @@ bool CCodeLess::RunEngine(size_t cond)
 			if(!SM_Run())
 				return false;
 		} else if (rc == 0) {
-			CIncludedFile *ifile = PopIncludedFile();
+			IncludedFile *ifile = PopIncludedFile();
 			if(!ifile->in_compiler_dir && rtc && !rtc->of_con.isnull()) {
 				ifile->produce_cr_text();
 				fol_append(rtc->of_con, ifile->cr_text.c_str(), ifile->cr_text.size());
@@ -1287,7 +1297,7 @@ bool CCodeLess::RunEngine(size_t cond)
  *
  *  Returns a pointer to the error messages on failure, or nil on success.
  */
-bool CCodeLess::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile, CP_CONTEXT *ctx)
+bool Parser::DoFile(ParsedState *pstate, size_t num_preprocessors, File *infile, ParserContext *ctx)
 {
 	bool ignored;
 	FILE *out_fp;
@@ -1308,20 +1318,20 @@ bool CCodeLess::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile,
 		utb.modtime = stb.st_mtime;
 	}
 	if( ! infile->Open() ) {
-		gex.format("Cannot open \"%s\" for reading\n");
+		excep.format("Cannot open \"%s\" for reading\n");
 		return false;
 	}
 
 	out_fp = NULL;
 
-	if(ctx != NULL && ctx->outfile != CP_CONTEXT::OF_NULL ) {
-		if( ctx->outfile == CP_CONTEXT::OF_STDOUT )
+	if(ctx != NULL && ctx->outfile != ParserContext::OF_NULL ) {
+		if( ctx->outfile == ParserContext::OF_STDOUT )
 			out_fp = stdout;
 		else {
 #if SANITY_CHECK
 			assert( ! ctx->baksuffix.isnull() );
 #endif
-			if( ctx->baksuffix[0] != CP_CONTEXT::MAGIC_CHAR )
+			if( ctx->baksuffix[0] != ParserContext::MAGIC_CHAR )
 				bak_fname = infile->name + ctx->baksuffix;
 			else
 				out_fname = infile->name;
@@ -1331,7 +1341,7 @@ bool CCodeLess::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile,
 			strcpy(tmp_outfile, "@cl@-XXXXXX");
 			fd = mkstemp(tmp_outfile);
 			if( fd < 0 ) {
-				gex.format("Cannot open \"%s\" for writing\n", tmp_outfile);
+				excep.format("Cannot open \"%s\" for writing\n", tmp_outfile);
 				infile->Close();
 				return false;
 			}
@@ -1340,14 +1350,14 @@ bool CCodeLess::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile,
 		}
 	}
 
-	if( num_preprocessors >= COUNT_OF(CCodeLess::preprocessors) )
-		num_preprocessors  = COUNT_OF(CCodeLess::preprocessors);
-	Reset(tc, num_preprocessors, ctx);
+	if( num_preprocessors >= COUNT_OF(Parser::preprocessors) )
+		num_preprocessors  = COUNT_OF(Parser::preprocessors);
+	Reset(pstate, num_preprocessors, ctx);
 
 	if(has_dep_file())
 		AddDependency("", infile->name);
 
-	PushIncludedFile(infile, out_fp, COUNT_OF(CCodeLess::preprocessors), false, conditionals.size());
+	PushIncludedFile(infile, out_fp, COUNT_OF(Parser::preprocessors), false, conditionals.size());
 
 	if(ctx != NULL) {
 		GetCmdLineIncludeFiles(ctx->imacro_files, 2);
@@ -1360,17 +1370,17 @@ bool CCodeLess::DoFile(TCC_CONTEXT *tc, size_t num_preprocessors, CFile *infile,
 	if(has_dep_file() && ! deptext.isnull() )
 		fol_append(ctx->of_dep, deptext.c_str(), deptext.size());
 	if( conditionals.size() != 0 )
-		gex = "Unmatched #if";
+		excep = "Unmatched #if";
 	else
 		retval = true;
 
 error:
 	if(!retval) {
 		if(included_files.size() > 0)
-			errmsg.format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), raw_line.c_str(), gex.GetError());
+			errmsg.format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), raw_line.c_str(), excep.GetError());
 		else
-			errmsg = gex.GetError();
-		CIncludedFile *ilevel;
+			errmsg = excep.GetError();
+		IncludedFile *ilevel;
 		while(included_files.size() > 0) {
 			ilevel = PopIncludedFile();
 			if(infile != ilevel->ifile)

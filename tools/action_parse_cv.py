@@ -56,41 +56,45 @@ class CHFile :
         else :
             self.conds[hkey] = new_cc
 
-optionsparser = optparse.OptionParser()
+def main(startidx) :
+    optionsparser = optparse.OptionParser(usage="usage: %prog [options] CV_FILE")
 
-optionsparser.add_option("-o", "--output", action='store', help="specify the output file", default=None)
+    optionsparser.add_option("-o", "--output", action='store', help="specify the output file", default=None)
 
-(options, args) = optionsparser.parse_args()
+    (options, args) = optionsparser.parse_args(sys.argv[startidx:])
 
-fd = open(args[0], "r")
-if fd is None:
-    print >>sys.sterr, "Cannot open %s" % args[0]
-    exit(1)
+    fd = open(args[0], "r")
+    if fd is None:
+        print >>sys.sterr, "Cannot open %s" % args[0]
+        exit(1)
 
-file = None
-hfiles = OrderedDict()
-for line in fd :
-    line = line.rstrip('\r\n')
-    if line[0] not in (' ', '\t') :
-        if line in hfiles :
-            file = hfiles[line]
+    file = None
+    hfiles = OrderedDict()
+    for line in fd :
+        line = line.rstrip('\r\n')
+        if line[0] not in (' ', '\t') :
+            if line in hfiles :
+                file = hfiles[line]
+            else :
+                file = CHFile()
+                hfiles[line] = file
+            file.proc_filename(line)
         else :
-            file = CHFile()
-            hfiles[line] = file
-        file.proc_filename(line)
+            file.proc_conditional(line)
+
+    if options.output is not None :
+        ofile = open(options.output, "w")
     else :
-        file.proc_conditional(line)
+        ofile = sys.stdout
 
-if options.output is not None :
-    ofile = open(options.output, "w")
-else :
-    ofile = sys.stdout
+    for name in hfiles :
+        print >> ofile, name
+        for cc in hfiles[name].conds.values() :
+            print >> ofile, "  %2s %-4s %2d %7s %7s" % (cc.level, cc.type, cc.value, cc.begin, cc.end)
 
-for name in hfiles :
-    print >> ofile, name
-    for cc in hfiles[name].conds.values() :
-        print >> ofile, "  %2s %-4s %2d %7s %7s" % (cc.level, cc.type, cc.value, cc.begin, cc.end)
+    if options.output is not None :
+        ofile.close()
 
-if options.output is not None :
-    ofile.close()
+if __name__ == '__main__' :
+    main(1)
 

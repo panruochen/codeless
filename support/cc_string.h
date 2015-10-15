@@ -16,7 +16,7 @@ public:
 
    inline void strcat(const char *from, const char *to);
    inline void strcat(CC_STRING s, ssize_t from);
-   
+
    inline const CC_STRING& operator += (const CC_STRING& s);
    inline const CC_STRING& operator += (const char *s);
    inline const CC_STRING& operator += (const char c);
@@ -31,11 +31,11 @@ public:
    friend inline const CC_STRING operator + (const CC_STRING& s1, const char *s2);
    friend inline const CC_STRING operator + (const CC_STRING& s, const char c);
 
-   inline ssize_t find(const CC_STRING& s);
-   inline ssize_t rfind(const char c);
+   inline ssize_t find(const CC_STRING& s) const;
+   inline ssize_t rfind(const char c) const;
 
    inline CC_STRING& operator=(const char *s);
-   inline const char * c_str() const; 
+   inline const char * c_str() const;
    void format(const char *fmt, ...);
    void format(const char *fmt, va_list ap);
 

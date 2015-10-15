@@ -1,19 +1,26 @@
-#ifndef  __TCC_H__
-#define  __TCC_H__
+#ifndef __PARSED_STATE_H
+#define __PARSED_STATE_H
 
 #include "cc_string.h"
 #include <inttypes.h>
 
-/* A Tiny C/C++ Preprocessor */
-
-struct _CC_HANDLE;
 typedef struct _CC_HANDLE *CC_HANDLE;
 
+typedef uint32_t sym_t;
 
-typedef unsigned long sym_t;
+enum OP_PRIO {
+	_LT = -1,
+	_EQ = 0,
+	_GT = 1,
+	_XX = 2,
+};
 
-/* Operator Precedence Maxtrix */
-class COPMatrix {
+#ifndef COUNT_OF
+#define COUNT_OF(a)  (sizeof(a) / sizeof(a[0]))
+#endif
+
+/* Operator Precedence Matrix */
+class OPMatrix {
 public:
   int  Create();
   void Construct();
@@ -24,16 +31,8 @@ private:
   CC_HANDLE handle;
 };
 
-/*-----------------------*/
-#define  OP_EQUAL   0
-#define  OP_LOWER   1
-#define  OP_HIGHER  2
-#define  OP_ERROR   3
-
-#define COUNT_OF(a)  (sizeof(a) / sizeof(a[0]))
-
-/* Symbol Table */
-class CSymMap {
+/* Symbol Lookup Table */
+class SymLut {
 public:
   int    Create();
   int    Construct(int, const char **);
@@ -46,8 +45,7 @@ protected:
     CC_HANDLE handle;
 };
 
-/* Lexical Token */
-struct CToken {
+struct SynToken {
     enum {
         TA_OPR,
         TA_UINT,
@@ -73,13 +71,13 @@ typedef uint16_t XCHAR;
 #define XF_MA_PAR2     0xC000  // macro parameter: ##x
 
 #define __IS_MA_PAR(xc,n)  (((xc) & 0xc000) == XF_MA_PAR##n)
-#define IS_MA_PAR0(xc)     __IS_MA_PAR(xc,0)  
-#define IS_MA_PAR1(xc)     __IS_MA_PAR(xc,1)  
+#define IS_MA_PAR0(xc)     __IS_MA_PAR(xc,0)
+#define IS_MA_PAR1(xc)     __IS_MA_PAR(xc,1)
 #define IS_MA_PAR2(xc)     __IS_MA_PAR(xc,2)
 
 /* Macro */
-struct CMacro {
-    static CMacro *const NotDef;
+struct SynMacro {
+    static SynMacro *const NotDef;
 	enum { OL_M = 0xFFFF };
 	sym_t       id;
 	uint16_t    nr_args;
@@ -88,30 +86,26 @@ struct CMacro {
 	XCHAR      *parsed;
 };
 
-/* Macro Class */
-class CMacMap {
+/* Macro Lookup Table */
+class MacLut {
 public:
   int    Create();
-  int    Put(sym_t id, CMacro *minfo);
+  int    Put(sym_t id, SynMacro *minfo);
   void   Remove(sym_t id);
-CMacro*  Lookup(sym_t id);
+  SynMacro* Lookup(sym_t id);
   void   Destroy();
 
 private:
   CC_HANDLE handle;
 };
 
-/*
- * The TCC context structure
- **/
-typedef struct TCC_CONTEXT {
-	CSymMap    syMap;   /* The Symbol Translattion Table */
-	COPMatrix  opMap;   /* The Operator Precedence Matrix */
-	CMacMap    maMap;   /* The Macro Definition Table */
-}  TCC_CONTEXT;
+struct ParsedState {
+	SymLut    syLut;   /* The Symbol Translattion Table */
+	OPMatrix  opMat;   /* The Operator Precedence Matrix */
+	MacLut    maLut;   /* The Macro Definition Table */
+};
 
-
-int tcc_init(TCC_CONTEXT *tc);
+int paserd_state_init(ParsedState *pstate);
 
 #include "precedence-matrix.h"
 

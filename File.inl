@@ -1,33 +1,33 @@
 #include "cc_string.h"
-#include "file.h"
+#include "File.h"
 
 ////////////////////////////////////////////////////////////////
 //  Real File Class
 ////////////////////////////////////////////////////////////////
 
-CRealFile::CRealFile()
+RealFile::RealFile()
 {
 	fp = NULL;
 }
 
-CRealFile::~CRealFile()
+RealFile::~RealFile()
 {
 	this->Close();
 }
 
-int CRealFile::ReadChar()
+int RealFile::ReadChar()
 {
 	return ::fgetc(fp);
 }
 
-bool CRealFile::Open()
+bool RealFile::Open()
 {
 	fp   = fopen(name.c_str(), "rb");
 	line = 0;
 	return fp != NULL;
 }
 
-void CRealFile::Close()
+void RealFile::Close()
 {
 	if(fp) {
 		fclose(fp);
@@ -35,12 +35,12 @@ void CRealFile::Close()
 	}
 }
 
-void CRealFile::SetFileName(const CC_STRING& name)
+void RealFile::SetFileName(const CC_STRING& name)
 {
 	this->name = name;
 }
 
-bool CRealFile::Open(const CC_STRING& filename)
+bool RealFile::Open(const CC_STRING& filename)
 {
 	fp    = fopen(filename.c_str(), "rb");
 	name  = filename;
@@ -53,57 +53,57 @@ bool CRealFile::Open(const CC_STRING& filename)
 ////////////////////////////////////////////////////////////////
 
 
-int CMemFile::ReadChar()
+int MemFile::ReadChar()
 {
 	if(pos < contents.size())
 		return contents[pos++];
 	return EOF;
 }
 
-CMemFile::CMemFile()
+MemFile::MemFile()
 {
 	pos = 0;
 }
 
-void CMemFile::SetFileName(const CC_STRING& name)
+void MemFile::SetFileName(const CC_STRING& name)
 {
 	this->name = name;
 	this->line = 0;
 }
 
-bool CMemFile::Open()
+bool MemFile::Open()
 {
 	pos = 0;
 	return true;
 }
 
-void CMemFile::Close()
+void MemFile::Close()
 {
 }
 
-CMemFile::~CMemFile()
+MemFile::~MemFile()
 {
 }
 
-CMemFile& CMemFile::operator << (const char *s)
-{
-	contents += s;
-	return *this;
-}
-
-CMemFile& CMemFile::operator << (const CC_STRING& s)
+MemFile& MemFile::operator << (const char *s)
 {
 	contents += s;
 	return *this;
 }
 
-CMemFile& CMemFile::operator << (const char c)
+MemFile& MemFile::operator << (const CC_STRING& s)
+{
+	contents += s;
+	return *this;
+}
+
+MemFile& MemFile::operator << (const char c)
 {
 	contents += c;
 	return *this;
 }
 
-size_t CMemFile::Size()
+size_t MemFile::Size()
 {
 	return contents.size();
 }

@@ -17,7 +17,7 @@
 #include <errno.h>
 #include <libgen.h>
 
-#include "fol.h"
+#include "Fol.h"
 #include "utils.h"
 
 int fol_fdappend(int fd, const void *buf, off_t n)
@@ -42,7 +42,6 @@ int fol_fdappend(int fd, const void *buf, off_t n)
 	return -1;
 }
 
-
 void fol_append(const CC_STRING& filename, const void *buf, size_t n)
 {
 	int fd;
@@ -62,41 +61,6 @@ void fol_write(const CC_STRING& filename, const void *buf, size_t n)
 	close(fd);
 }
 
-
-int fol_copy(const CC_STRING& src, const CC_STRING& dst)
-{
-	int fs, fd, last_errno = 0;
-	static char buf[512];
-	const int chunksize = sizeof(buf);
-
-	fs = open(src.c_str(), O_RDONLY, 0666);
-	if(fs < 0) {
-		last_errno = errno;
-		goto error;
-	}
-	fd = open(dst.c_str(), O_WRONLY|O_CREAT|O_TRUNC, 0666);
-	if(fd < 0) {
-		last_errno = errno;
-		goto error;
-	}
-	if(fs > 0 && fd > 0) {
-		int n1, n2;
-		do {
-			n1 = read(fs, buf, chunksize);
-			n2 = write(fd, buf, n1);
-			if(n1 != n2) {
-				last_errno = errno;
-				break;
-			}
-		} while(n2 == chunksize);
-		close(fs);
-		close(fd);
-	}
-error:
-	return - last_errno;
-}
-
-
 FILE *fol_afopen(const CC_STRING& filename)
 {
 	struct stat stbuf;
@@ -111,13 +75,35 @@ FILE *fol_afopen(const CC_STRING& filename)
 	return fopen(filename, mode);
 }
 
-
 bool fol_exist(const CC_STRING& filename)
 {
 	struct stat stb;
 	return stat(filename, &stb) == 0;
 }
 
+
+CC_STRING fol_dirname(const CC_STRING& path)
+{
+	char *tmp;
+	CC_STRING dir;
+
+	tmp = strdup(path.c_str());
+	dir = dirname(tmp);
+	free(tmp);
+	return dir;
+}
+
+#include "realpath.h"
+CC_STRING fol_realpath(const CC_STRING& src)
+{
+    char dest[4096];
+
+	if( ! y_realpath(dest, sizeof(dest), src.c_str()) )
+		return CC_STRING("");
+	return CC_STRING(dest);
+}
+
+#if 0
 int fol_mkdir(const CC_STRING& dirname)
 {
     CC_STRING newdir;
@@ -164,19 +150,6 @@ fail:
 	return retval;
 }
 
-
-CC_STRING fol_dirname(const CC_STRING& path)
-{
-	char *tmp;
-	CC_STRING dir;
-
-	tmp = strdup(path.c_str());
-	dir = dirname(tmp);
-	free(tmp);
-	return dir;
-}
-
-
 int fol_copy_with_parent(const CC_STRING& src, const CC_STRING& dst)
 {
 	CC_STRING ddir;
@@ -193,15 +166,37 @@ int fol_copy_with_parent(const CC_STRING& src, const CC_STRING& dst)
 	return fol_copy(src, dst);
 }
 
-
-#include "realpath.h"
-CC_STRING fol_realpath(const CC_STRING& src)
+int fol_copy(const CC_STRING& src, const CC_STRING& dst)
 {
-    char dest[4096];
+	int fs, fd, last_errno = 0;
+	static char buf[512];
+	const int chunksize = sizeof(buf);
 
-	if( ! y_realpath(dest, sizeof(dest), src.c_str()) )
-		return CC_STRING("");
-	return CC_STRING(dest);
+	fs = open(src.c_str(), O_RDONLY, 0666);
+	if(fs < 0) {
+		last_errno = errno;
+		goto error;
+	}
+	fd = open(dst.c_str(), O_WRONLY|O_CREAT|O_TRUNC, 0666);
+	if(fd < 0) {
+		last_errno = errno;
+		goto error;
+	}
+	if(fs > 0 && fd > 0) {
+		int n1, n2;
+		do {
+			n1 = read(fs, buf, chunksize);
+			n2 = write(fd, buf, n1);
+			if(n1 != n2) {
+				last_errno = errno;
+				break;
+			}
+		} while(n2 == chunksize);
+		close(fs);
+		close(fd);
+	}
+error:
+	return - last_errno;
 }
 
-
+#endif

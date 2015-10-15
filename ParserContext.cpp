@@ -12,9 +12,14 @@
 #include <utime.h>
 
 #include "utils.h"
-#include "codeless.h"
+#include "cc_string.h"
+#include "cc_array.h"
+#include "ParserContext.h"
+#include "log.h"
+#include "GlobalVars.h"
+#include "Fol.h"
 
-static void new_define(CMemFile& mfile, const char *option)
+static void new_define(MemFile& mfile, const char *option)
 {
 	char *p, c;
 	CC_STRING s;
@@ -38,7 +43,7 @@ static void new_define(CMemFile& mfile, const char *option)
 	return;
 }
 
-static void new_undef(CMemFile& mfile, const char *option)
+static void new_undef(MemFile& mfile, const char *option)
 {
 	mfile << "#undef ";
 	mfile << option;
@@ -120,7 +125,9 @@ enum {
 	COP_CC_PATH,
 	COP_CLEANER_MODE,
 	COP_IGNORE,
-	COP_VERBOSE
+	COP_VERBOSE,
+	COP_TOPDIR,
+	COP_HELP,
 };
 
 extern "C" {
@@ -146,7 +153,7 @@ static const struct gnu_option_s *parse_again(const char *arg)
 	return NULL;
 }
 
-int CP_CONTEXT::get_options(int argc, char *argv[],const char *short_options, const struct option *long_options)
+int ParserContext::get_options(int argc, char *argv[],const char *short_options, const struct option *long_options)
 {
 	int retval = -1;
 	int last_c = -1;
@@ -194,6 +201,9 @@ retry:
 			after_dirs.push_back(optarg);
 			save_cc_args();
 			break;
+		case 'o':
+			save_cc_args();
+			break;
 		case 'I':
 			ujoin(i_dirs, optarg);
 			save_cc_args();
@@ -209,6 +219,7 @@ retry:
 
 		case COP_SOURCE:
 			source_files.push_back(optarg);
+			save_my_args();
 			break;
 		case COP_SAVE_COMMAND_LINE:
 			of_cl = optarg;
@@ -263,6 +274,16 @@ retry:
 		CB_END
 			break;
 
+		case COP_TOPDIR:
+			topdir = optarg;
+			save_my_args();
+			break;
+
+		case COP_HELP:
+			print_help = true;
+			save_my_args();
+			break;
+
 		case ':':
 		case '?':
 		default:
@@ -289,6 +310,15 @@ retry:
 		outfile = OF_NORM;
 	} else if(no_output)
 		outfile = OF_NULL;
+
+	CB_BEGIN
+	const char *xe = !of_con.isnull() ? "--yz-save-condvals" :
+		(!of_dep.isnull() ? "--yz-save-dep" : NULL);
+	if( xe && topdir.isnull() ) {
+		errmsg.format("--yz-topdir must be specified if %s exists", xe);
+		goto error;
+	}
+	CB_END
 
 	for(int i = optind; i < argc; i++) {
 		uint8_t type;
@@ -324,12 +354,14 @@ error:
 
 void __NO_USE__ dump_args(int argc, char *argv[]);
 
-int CP_CONTEXT::get_options(int argc, char *argv[])
+int ParserContext::get_options(int argc, char *argv[])
 {
 	static const struct option long_options[] = {
 		{"yz-save-cl",         1, 0, COP_SAVE_COMMAND_LINE },
 		{"yz-save-dep",        2, 0, COP_SAVE_DEPENDENCY },
 		{"yz-save-condvals",   1, 0, COP_SAVE_CONDVALS },
+		{"yz-topdir",          1, 0, COP_TOPDIR },
+		{"yz-source",          1, 0, COP_SOURCE },
 		{"yz-in-place",        2, 0, COP_IN_PLACE },
 		{"yz-no-output",       0, 0, COP_NO_OUTPUT },
 		{"yz-cc",              1, 0, COP_CC },
@@ -337,6 +369,7 @@ int CP_CONTEXT::get_options(int argc, char *argv[])
 		{"yz-cleaner-mode",    0, 0, COP_CLEANER_MODE },
 		{"yz-ignore",          1, 0, COP_IGNORE },
 		{"yz-verbose",         1, 0, COP_VERBOSE },
+		{"yz-help",            0, 0, COP_HELP },
 		{"include",  1, 0, COP_INCLUDE},
 		{"imacros",  1, 0, COP_IMACROS},
 		{"isystem",  1, 0, COP_ISYSTEM},
@@ -347,11 +380,11 @@ int CP_CONTEXT::get_options(int argc, char *argv[])
 	int retval;
 	opterr = 0;
 	levels = 0;
-	retval = get_options(argc, argv, "I:D:U:", long_options);
+	retval = get_options(argc, argv, "I:D:U:o:", long_options);
 	return retval;
 }
 
-void CP_CONTEXT::save_cc_args()
+void ParserContext::save_cc_args()
 {
 	if(levels != 1)
 		return;
@@ -361,7 +394,7 @@ void CP_CONTEXT::save_cc_args()
 	}
 }
 
-void CP_CONTEXT::save_my_args()
+void ParserContext::save_my_args()
 {
 	if(levels != 1)
 		return;
@@ -371,7 +404,7 @@ void CP_CONTEXT::save_my_args()
 	}
 }
 
-bool CP_CONTEXT::check_ignore(const CC_STRING& filename)
+bool ParserContext::check_ignore(const CC_STRING& filename)
 {
 	if( ignore_list.size() == 0 || filename.isnull())
 		return false;
@@ -384,19 +417,13 @@ bool CP_CONTEXT::check_ignore(const CC_STRING& filename)
 	return false;
 }
 
-/*
--I directory
-    Change the algorithm for searching for headers whose names are not absolute pathnames to look
-	in the directory named by the directory pathname before looking in the usual places. Thus,
-	headers whose names are enclosed in double-quotes ( "" ) shall be searched for first in the directory
-	of the file with the #include line, then in directories named in -I options, and last in the usual places.
-	For headers whose names are enclosed in angle brackets ( "<>" ), the header shall be searched for only
-	in directories named in -I options and then in the usual places. Directories named in -I options shall
-	be searched in the order specified. Implementations shall support at least ten instances of this option
-	in a single c99 command invocation.
-*/
+static bool is_beyond(const CC_STRING& dir, const CC_STRING& topdir)
+{
+	/* Assume a path which is not absolute is not beyond the top directory. This is not absolutely correct, but usually correct */
+	return dir[0] == '/' && dir.find(topdir) != 0;
+}
 
-CC_STRING CP_CONTEXT::get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
+CC_STRING ParserContext::get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
 	bool quote_include, bool include_next, bool *in_sys_dir)
 {
 	size_t i, count;
@@ -419,7 +446,8 @@ CC_STRING CP_CONTEXT::get_include_file_path(const CC_STRING& included_file, cons
 		++count;
 		if( ! include_next ) {
 			if(in_sys_dir != NULL)
-				*in_sys_dir = find(compiler_dirs, curdir);
+//				*in_sys_dir = find(compiler_dirs, curdir);
+				*in_sys_dir = is_beyond(curdir, topdir);
 			return path;
 		}
 	}
@@ -436,18 +464,11 @@ CC_STRING CP_CONTEXT::get_include_file_path(const CC_STRING& included_file, cons
 			path += included_file;
 
 			if( stat(path.c_str(), &st) == 0 ) {
-				bool v;
 				++count;
 				if( ! include_next || count == 2) {
 					if(in_sys_dir != NULL)
-						*in_sys_dir = v = find(compiler_dirs, order[j]);
-					if( 0 && strstr(path.c_str(), "arm-linux-gnueabihf") ) {
-						size_t nnn;
-						for(nnn = 0; nnn < compiler_dirs.size(); nnn++)
-							fprintf(stderr, "  sys: %s\n", compiler_dirs[nnn].c_str());
-						fprintf(stderr, "in_sys_dir = %d\n", v);
-						exit(1);
-					}
+//						*in_sys_dir = v = find(compiler_dirs, order[j]);
+						*in_sys_dir = is_beyond(order[j], topdir);
 					return path;
 				}
 			}
@@ -457,11 +478,12 @@ CC_STRING CP_CONTEXT::get_include_file_path(const CC_STRING& included_file, cons
 	return path;
 }
 
-CP_CONTEXT::CP_CONTEXT()
+ParserContext::ParserContext()
 {
 	as_lc_char = 0;
 	no_stdinc  = false;
+	print_help = false;
 	outfile    = OF_STDOUT;
 }
 
-const char CP_CONTEXT::MAGIC_CHAR = '\x0';
+const char ParserContext::MAGIC_CHAR = '\x0';

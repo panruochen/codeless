@@ -22,14 +22,14 @@ class CodeBlock :
         self.type  = type
         self.mode  = 0
 
-def iv_compare(x, y) :
+def cb_compare(x, y) :
     if x.end < y.begin :
         return -1;
     elif y.end < x.begin :
         return 1;
     return 0
 
-def check_against(key, array) :
+def binsearch(key, array) :
     a = 0
     b = len(array) - 1
     while a <= b :
@@ -43,12 +43,11 @@ def check_against(key, array) :
             return cb
     return None
 
-def strip_file(file, c_blocks, fdump) :
-    global patterns, sub_patterns
+def strip_file(options, file, c_blocks, fdump) :
     for i in options.ignlist :
         if file.find(i) >= 0 :
             return
-    c_blocks.sort(iv_compare)
+    c_blocks.sort(cb_compare)
     if fdump is not None :
         print >>fdump, "Process file %s" % file
         for cb in c_blocks :
@@ -58,7 +57,7 @@ def strip_file(file, c_blocks, fdump) :
     fdw = open(file+'.NEW', "w")
     for line in fdr :
         lnr += 1
-        cb = check_against(lnr, c_blocks)
+        cb = binsearch(lnr, c_blocks)
         if not cb :
             fdw.write(line)
         else :
@@ -74,7 +73,6 @@ def strip_file(file, c_blocks, fdump) :
     fdw.close()
     shutil.move(file, file + '.hbak')
     shutil.move(file + '.NEW', file)
-    print "%s stripped" % file
 
 def proc_if(c_blocks, q) :
     tmplist = deque([])
@@ -114,14 +112,16 @@ def proc_if(c_blocks, q) :
         if tmplist[-1].value == 0 :
             c_blocks[-1].end -= 1 ## keep the #endif
 
-def run(cerfile, fdump) :
-    fd = open(cerfile, "r")
+def run(options, us_files, fdump, processed_files) :
+    fd = open(options.cvfile, "r")
     if not fd :
-        print >>sys.stderr, "Cannot open %s to analyze" % cerfile
+        print >>sys.stderr, "Cannot open %s to analyze" % options.cvfile
+        exit(1)
 
-    hfile = None
     c_blocks = []
+    hfile = None
     levels = dict()
+
     for line in fd :
         if len(line) == 0 :
             continue
@@ -158,39 +158,57 @@ def run(cerfile, fdump) :
                 if t == 'else' :
                     proc_if(c_blocks, q)
         else :
-            if len(c_blocks) > 0:
-                strip_file(hfile, c_blocks, fdump)
+            if (options.all or hfile in us_files) and len(c_blocks) > 0 :
+                strip_file(options, hfile, c_blocks, fdump)
+                processed_files.append(hfile)
             elif hfile is not None and fdump is not None:
                 print >>fdump, "Nothing to do for \"%s\"" % hfile
             hfile = line
             del c_blocks[:]
             levels.clear()
 
-    if len(c_blocks) > 0:
-        strip_file(hfile, c_blocks, fdump)
+    if (options.all or hfile in us_files) and len(c_blocks) > 0 :
+        strip_file(options, hfile, c_blocks, fdump)
+        processed_files.append(hfile)
         del c_blocks
 
-optionsparser = optparse.OptionParser()
+def main(startidx) :
+    oparser = optparse.OptionParser()
 
-optionsparser.add_option("-c", "--cer-file", action='store', help="Specify the conditional evaluation result file", dest='cerfile', default=None)
-optionsparser.add_option("-d", "", action='store', help="Specify the file to dump", dest='dumpfile', default=None)
-optionsparser.add_option("-i", "--yz-ignore", action='append', help="Specify the file to be ignored", dest='ignlist', default=[])
+    oparser.add_option("-f", "--condvals-file", action='store', help="Specify the conditional-values(CV) file", dest='cvfile', default=None)
+    oparser.add_option("-d", "", action='store', help="Specify the file to dump", dest='dumpfile', default=None)
+    oparser.add_option("-i", "--yz-ignore", action='append', help="Specify the file to be ignored", dest='ignlist', default=[])
+    oparser.add_option("-a", "--all", action='store_true', help="Strip all files listed in the CV file", dest='all')
+    oparser.add_option("-v", "", action='store_true', help="Verbose mode", dest='verbose')
 
-(options, args) = optionsparser.parse_args()
+    (options, files) = oparser.parse_args(sys.argv[startidx:])
 
-if options.cerfile is None :
-    print >>sys.stderr, "Usage: %s CONDITIONAL_RESULT_FILE" % os.path.basename(sys.argv[0])
-    exit(1)
+    if options.cvfile is None :
+        oparser.print_help()
+        exit(1)
 
-fdump = None
-if options.dumpfile is not None :
-    fdump = open(options.dumpfile, "w")
+    fdump = None
+    if options.dumpfile is not None :
+        fdump = open(options.dumpfile, "w")
+
+
+    us_files = set()
+    for i in files :
+        us_files.add(os.path.realpath(i))
+
+    processed_files = []
+    run(options, us_files, fdump, processed_files)
+
+    if fdump is not None :
+        fdump.close()
+
+    if options.verbose :
+        for file in processed_files :
+            print >>sys.stderr, "%s stripped" % file
 
 patterns = {}
 for i in ('if', 'else', 'elif', 'endif') :
     patterns[i] = re.compile('#\s*' + i)
 sub_patterns = [ None, re.compile('#\s*elif') ]
-
-run(options.cerfile, fdump)
-if fdump is not None :
-    fdump.close()
+if __name__ == '__main__' :
+    main(2)

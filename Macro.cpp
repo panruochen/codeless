@@ -8,27 +8,32 @@
 #include <sys/types.h>
 #include <assert.h>
 
-#include "codeless.h"
+#include "base.h"
+#include "ParsedState.h"
+#include "cc_string.h"
+#include "cc_array.h"
+#include "Exception.h"
+#include "GlobalVars.h"
 
 class CMaExpander {
 public:
-	CMaExpander(TCC_CONTEXT *tc, const char *line, bool for_include);
+	CMaExpander(ParsedState *pstate, const char *line, bool for_include);
 	CC_STRING   TryExpand();
 
 private:
 	const char *  pos;
-	TCC_CONTEXT*  tc;
+	ParsedState*  pstate;
 	CC_STRING     inStr;
 	bool          for_include;
 	sym_t         last_ids[2];
-	CException    gex;
+	Exception    excep;
 
-	CC_STRING     Expand_FLM(CMacro *ma);
-	CC_STRING     Expand_OLM(CMacro *ma);
-	CMacro*       GetMacro(sym_t mid);
+	CC_STRING     Expand_FLM(SynMacro *ma);
+	CC_STRING     Expand_OLM(SynMacro *ma);
+	SynMacro*       GetMacro(sym_t mid);
 	inline bool   in_defined_context();
-	
-	bool          ReadToken(CToken *token);
+
+	bool          ReadToken(SynToken *token);
 	void          IgnoreSpaces();
 	bool          IsValidToken(const CC_STRING& s);
 	void          Trim(CC_STRING &s);
@@ -36,28 +41,28 @@ private:
 
 inline bool CMaExpander::in_defined_context()
 {
-	return (last_ids[1] == SSID_DEFINED || 
+	return (last_ids[1] == SSID_DEFINED ||
 		(last_ids[0] == SSID_DEFINED && last_ids[1] == SSID_LEFT_PARENTHESIS));
 }
 
+#define IS_FLM(ma)        ((ma)->nr_args != SynMacro::OL_M)
+#define IS_MACRO(ma)      ((ma) != NULL && (ma) != SynMacro::NotDef)
 
+bool ReadToken(ParsedState *pstate, const char **line, SynToken *tokp, Exception *excep, bool for_include);
 
-#define IS_FLM(ma)        ((ma)->nr_args != CMacro::OL_M)
-#define IS_MACRO(ma)      ((ma) != NULL && (ma) != CMacro::NotDef)
-
-static void handle_define(TCC_CONTEXT *tc, sym_t mid, CMacro *ma);
+static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma);
 
 /* Find the specific macro in the table. Expand it if it is not expanded.
  *
  */
-CMacro * CMaExpander::GetMacro(sym_t mid)
+SynMacro * CMaExpander::GetMacro(sym_t mid)
 {
-	CMacro *ma = tc->maMap.Lookup(mid);
+	SynMacro *ma = pstate->maLut.Lookup(mid);
 	if( IS_MACRO(ma) && ma->id == SSID_INVALID ) {
-		handle_define(tc, mid, ma);
+		handle_define(pstate, mid, ma);
 		free(ma->line);
 		ma->line = NULL;
-		return tc->maMap.Lookup(mid);
+		return pstate->maLut.Lookup(mid);
 	}
 	return ma;
 }
@@ -91,12 +96,12 @@ static void __NO_USE__ dump(const XCHAR *xc)
 		printf("%s\n", s.c_str());
 }
 
-static bool get_token(TCC_CONTEXT *tc, const char **line, CToken *token, bool for_include)
+static bool get_token(ParsedState *pstate, const char **line, SynToken *token, bool for_include)
 {
 	bool retval;
-	CException *ex = new CException;
+	Exception *ex = new Exception;
 
-	retval = ::ReadToken(tc, line, token, ex, for_include);
+	retval = ::ReadToken(pstate, line, token, ex, for_include);
 	if( ex->GetError() != NULL )
 		throw ex;
 	delete ex;
@@ -104,13 +109,13 @@ static bool get_token(TCC_CONTEXT *tc, const char **line, CToken *token, bool fo
 }
 
 
-bool CMaExpander::ReadToken(CToken *token)
+bool CMaExpander::ReadToken(SynToken *token)
 {
 	bool retval;
 
-	retval = ::ReadToken(tc, &pos, token, &gex, for_include);
-	if( gex.GetError() != NULL )
-		throw &gex;
+	retval = ::ReadToken(pstate, &pos, token, &excep, for_include);
+	if( excep.GetError() != NULL )
+		throw &excep;
 	return retval;
 }
 
@@ -151,7 +156,7 @@ void CMaExpander::Trim(CC_STRING& s)
 	s = ns;
 }
 
-CC_STRING CMaExpander::Expand_FLM(CMacro *ma)
+CC_STRING CMaExpander::Expand_FLM(SynMacro *ma)
 {
 	CC_STRING outs;
 	CC_ARRAY<CC_STRING> margs;
@@ -161,12 +166,12 @@ CC_STRING CMaExpander::Expand_FLM(CMacro *ma)
 
 	skip_blanks(p);
 	if( iseol(*p) ) {
-		gex.format("Macro \"%s\" expects arguments", TR(tc,ma->id));
-		throw &gex;
+		excep.format("Macro \"%s\" expects arguments", TR(pstate,ma->id));
+		throw &excep;
 	}
 	if( *p != '(' ) {
-		gex = "Macro expects '('";
-		throw &gex;
+		excep = "Macro expects '('";
+		throw &excep;
 	}
 
 	p++;
@@ -210,21 +215,21 @@ CC_STRING CMaExpander::Expand_FLM(CMacro *ma)
 	size_t n;
 
 	n = ma->nr_args;
-	assert(n != CMacro::OL_M);
+	assert(n != SynMacro::OL_M);
 	if(n != margs.size()) {
 		if( ma->va_args && margs.size() + 1 == n ) {
 			margs.push_back(CC_STRING(""));
 		} else {
-			gex.format("Macro \"%s\" requires %u arguments, but %u given",
-				TR(tc,ma->id), n, margs.size() );
-			throw &gex;
+			excep.format("Macro \"%s\" requires %u arguments, but %u given",
+				TR(pstate,ma->id), n, margs.size() );
+			throw &excep;
 		}
 	}
 
 	for(xc = ma->parsed; *xc != 0; xc++) {
 		if(IS_MA_PAR2(*xc) || IS_MA_PAR0(*xc)) {
 			const CC_STRING& carg = margs[(uint8_t)*xc];
-			CMaExpander expander2(tc, carg.c_str(), for_include);
+			CMaExpander expander2(pstate, carg.c_str(), for_include);
 			CC_STRING tmp;
 			tmp = expander2.TryExpand();
 			s += tmp;
@@ -243,7 +248,7 @@ CC_STRING CMaExpander::Expand_FLM(CMacro *ma)
 }
 
 
-CC_STRING CMaExpander::Expand_OLM(CMacro *ma)
+CC_STRING CMaExpander::Expand_OLM(SynMacro *ma)
 {
 	XCHAR *xc;
 	CC_STRING outs;
@@ -256,7 +261,7 @@ CC_STRING CMaExpander::Expand_OLM(CMacro *ma)
 
 CC_STRING CMaExpander::TryExpand()
 {
-	CToken token;
+	SynToken token;
 	CC_STRING outs;
 	static int debug_level;
 	CC_STRING saved_inStr = inStr;
@@ -268,10 +273,10 @@ CC_STRING CMaExpander::TryExpand()
 		const char *const last_pos  = pos;
 
 		IgnoreSpaces();
-		if( ! get_token(tc, &pos, &token, for_include) )
+		if( ! get_token(pstate, &pos, &token, for_include) )
 			break;
-		if( token.attr == CToken::TA_IDENT ) {
-			CMacro *ma;
+		if( token.attr == SynToken::TA_IDENT ) {
+			SynMacro *ma;
 			CC_STRING tmp;
 			ma = GetMacro(token.id);
 			if( IS_MACRO(ma) && ! in_defined_context() ) {
@@ -288,11 +293,11 @@ CC_STRING CMaExpander::TryExpand()
 
 				const ssize_t offset = last_pos - inStr.c_str();
 				CC_STRING newStr;
-				
+
 				newStr.strcat(inStr.c_str(), last_pos);
 				newStr += tmp;
 				newStr += pos;
-				
+
 				inStr = newStr;
 				pos   = inStr.c_str() + offset;
 			} else
@@ -313,9 +318,9 @@ CC_STRING CMaExpander::TryExpand()
 }
 
 
-CMaExpander::CMaExpander(TCC_CONTEXT *tc, const char *line, bool for_include)
+CMaExpander::CMaExpander(ParsedState *pstate, const char *line, bool for_include)
 {
-	this->tc          = tc;
+	this->pstate          = pstate;
 	this->inStr       = line;
 	this->pos         = inStr.c_str();
 	this->for_include = for_include;
@@ -323,21 +328,21 @@ CMaExpander::CMaExpander(TCC_CONTEXT *tc, const char *line, bool for_include)
 	last_ids[1] = SSID_INVALID;
 }
 
-CC_STRING ExpandLine(TCC_CONTEXT *tc, bool for_include, const char *line, CException *gex)
+CC_STRING ExpandLine(ParsedState *pstate, bool for_include, const char *line, Exception *excep)
 {
-	CMaExpander maExpander(tc, line, for_include );
-	CC_STRING expansion; 
+	CMaExpander maExpander(pstate, line, for_include );
+	CC_STRING expansion;
 
 	try {
 		expansion = maExpander.TryExpand();
-	} catch(CException *e) {
-		*gex = *e;
+	} catch(Exception *e) {
+		*excep = *e;
 	}
 	return expansion;
 }
 
 /****** Part II: MACRO RECOGNITION ********/
-static CException gEx;
+static Exception gEx;
 
 static int find(sym_t id, const CC_ARRAY<sym_t>& list)
 {
@@ -358,7 +363,7 @@ static void __NO_USE__ dump(const char *a, const char *b)
 }
 
 
-static void handle_define(TCC_CONTEXT *tc, sym_t mid, CMacro *ma)
+static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 {
 	enum {
 		STA_OKAY,
@@ -369,39 +374,39 @@ static void handle_define(TCC_CONTEXT *tc, sym_t mid, CMacro *ma)
 	} state;
 
 	const char *line = ma->line;
-	CToken token;
+	SynToken token;
 
-	if( ! get_token(tc, &line, &token, false) )
+	if( ! get_token(pstate, &line, &token, false) )
 		return;
 
-	if(token.attr == CToken::TA_IDENT) {
+	if(token.attr == SynToken::TA_IDENT) {
 		if(*line == '(') {
 			CC_ARRAY<sym_t>  para_list;
 			XCHAR *xc;
 			const char *last_pos;
 			sym_t last_para = SSID_INVALID;
 			bool has_va_args = false;
-		
+
 			state = STA_LEFT_PARENTHESIS;
 			line++;
-			while( get_token(tc, &line, &token, false) ) {
+			while( get_token(pstate, &line, &token, false) ) {
 				switch(state) {
-				case STA_LEFT_PARENTHESIS:	
+				case STA_LEFT_PARENTHESIS:
 					if( token.id == SSID_RIGHT_PARENTHESIS) {
 						state = STA_OKAY;
 						goto okay;
-					} else if(token.attr == CToken::TA_IDENT) {
+					} else if(token.attr == SynToken::TA_IDENT) {
 						para_list.push_back(token.id);
 						state = STA_SEPERATOR;
 					} else if(token.id == SSID_TRIDOT) {
 						state = STA_TRIDOT;
 						continue;
 					} else {
-						gEx.format("\"%s\" may not appear in macro parameter list", TR(tc,token.id));
+						gEx.format("\"%s\" may not appear in macro parameter list", TR(pstate,token.id));
 						goto error;
 					}
 					break;
-		
+
 				case STA_SEPERATOR:
 					if(token.id == SSID_RIGHT_PARENTHESIS) {
 						state = STA_OKAY;
@@ -415,12 +420,12 @@ static void handle_define(TCC_CONTEXT *tc, sym_t mid, CMacro *ma)
 						goto error;
 					}
 					break;
-		
+
 				case STA_PARAMETER:
 					if(token.id == SSID_TRIDOT) {
 						state = STA_TRIDOT;
 						continue;
-					} else if(token.attr == CToken::TA_IDENT) {
+					} else if(token.attr == SynToken::TA_IDENT) {
 						para_list.push_back(token.id);
 						state = STA_SEPERATOR;
 					} else {
@@ -451,7 +456,7 @@ static void handle_define(TCC_CONTEXT *tc, sym_t mid, CMacro *ma)
 				gEx = "missing ')' in macro parameter list";
 				throw &gEx;
 			}
-		
+
 		okay:
 			xc = (XCHAR*) malloc(sizeof(XCHAR) * strlen(line) + 4);
 			ma->id         = mid;
@@ -463,10 +468,10 @@ static void handle_define(TCC_CONTEXT *tc, sym_t mid, CMacro *ma)
 			last_pos = line;
 			sym_t prev_sid = SSID_INVALID;
 
-			while(  ReadToken(tc, &line, &token, &gEx, false) ) {
+			while(  ReadToken(pstate, &line, &token, &gEx, false) ) {
 				if(gEx.GetError() != NULL)
 					throw (&gEx);
-				
+
 				if(token.id == SSID_DUAL_SHARP) {
 					if(xc == ma->parsed) {
 						gEx = "'##' cannot appear at either end of a macro expansion";
@@ -482,7 +487,7 @@ static void handle_define(TCC_CONTEXT *tc, sym_t mid, CMacro *ma)
 					assert(*xc == '#' || *xc == ' ' || *xc == '\t');
 				}
 
-				if( token.attr == CToken::TA_IDENT  ) {
+				if( token.attr == SynToken::TA_IDENT  ) {
 					int magic = 0;
 					int16_t para_ord;
 					static const XCHAR xflags[3] = { XF_MA_PAR0, XF_MA_PAR1, XF_MA_PAR2 };
@@ -521,7 +526,7 @@ static void handle_define(TCC_CONTEXT *tc, sym_t mid, CMacro *ma)
 			xc = (XCHAR*) malloc(sizeof(XCHAR) * strlen(line) + 4);
 			ma->id      = mid;
 			ma->parsed  = xc;
-			ma->nr_args = CMacro::OL_M;
+			ma->nr_args = SynMacro::OL_M;
 
 			skip_blanks(line);
 			while(1) {
@@ -543,19 +548,19 @@ error:
 }
 
 
-void handle_undef(TCC_CONTEXT *tc, const char *line)
+void handle_undef(ParsedState *pstate, const char *line)
 {
-	CToken token;
+	SynToken token;
 
-	ReadToken(tc, &line, &token, &gEx, false);
+	ReadToken(pstate, &line, &token, &gEx, false);
 	if( ! gv_preprocess_mode )
-		tc->maMap.Put(token.id, CMacro::NotDef);
+		pstate->maLut.Put(token.id, SynMacro::NotDef);
 	else {
-		CMacro *ma = tc->maMap.Lookup(token.id);
+		SynMacro *ma = pstate->maLut.Lookup(token.id);
 		if( IS_MACRO(ma) )
 			free(ma->parsed);
-		tc->maMap.Remove(token.id);
+		pstate->maLut.Remove(token.id);
 	}
 }
 
-CMacro *const CMacro::NotDef = (CMacro *const) 1;
+SynMacro *const SynMacro::NotDef = (SynMacro *const) 1;

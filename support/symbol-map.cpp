@@ -4,7 +4,7 @@
 #include <errno.h>
 #include "cc_string.h"
 
-#include "tcc.h"
+#include "ParsedState.h"
 
 struct str_less {
     bool operator() (const CC_STRING& s1, const CC_STRING& s2)
@@ -22,7 +22,7 @@ struct SYM_TABLE {
 	int cur_id;
 };
 
-int CSymMap::Create()
+int SymLut::Create()
 {
 	SYM_TABLE  *symtab;
 		
@@ -33,7 +33,7 @@ int CSymMap::Create()
     return 0;
 }
 
-int CSymMap::Construct(int min_id, const char *reserved_symbols[])
+int SymLut::Construct(int min_id, const char *reserved_symbols[])
 {
 	SYM_TABLE&  symtab = *(SYM_TABLE *) handle;
 	symtab.map1.clear();
@@ -56,7 +56,7 @@ int CSymMap::Construct(int min_id, const char *reserved_symbols[])
 	return 0;
 }
 
-sym_t CSymMap::Put(const CC_STRING& symbol)
+sym_t SymLut::Put(const CC_STRING& symbol)
 {
 	SYM_TABLE&  symtab = *(SYM_TABLE *) handle;
 	MAP1& map1 = symtab.map1;
@@ -79,7 +79,7 @@ sym_t CSymMap::Put(const CC_STRING& symbol)
 	}
 }
 
-void CSymMap::Destroy()
+void SymLut::Destroy()
 {
 	SYM_TABLE *symtab = (SYM_TABLE *) handle;
 
@@ -88,7 +88,7 @@ void CSymMap::Destroy()
 	delete symtab;
 }
 
-sym_t CSymMap::TrSym(const CC_STRING& symbol)
+sym_t SymLut::TrSym(const CC_STRING& symbol)
 {
 	SYM_TABLE&  symtab = *(SYM_TABLE *) handle;
 	MAP1&    map1 =  symtab.map1;
@@ -100,7 +100,7 @@ sym_t CSymMap::TrSym(const CC_STRING& symbol)
 	return pos->second;
 }
 
-const CC_STRING& CSymMap::TrId(const sym_t id)
+const CC_STRING& SymLut::TrId(const sym_t id)
 {
 	SYM_TABLE&  symtab = *(SYM_TABLE *) handle;
 	MAP2::iterator pos;

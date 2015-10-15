@@ -5,56 +5,86 @@
 YZ_EXTDIR = 'pyext'
 
 import re, os, sys, getopt, subprocess
+from distutils import spawn
 sys.path.append(os.path.dirname(sys.argv[0]) + '/' + YZ_EXTDIR)
 import cu_lib
 
-YZ_CC               = []
-YZ_PXCC             = None
-
-YZ_DEP_FILE         = None
-YZ_CL_FILE          = None
-YZ_SHELL            = None
-YZ_IGNORE           = ""
-YZ_CONDVAL          = None
-YZ_PP_SUITE         = None
-
-def do_execp(cmd, errors='abort') :
-    sp = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    out, err = sp.communicate()
-    if errors != 'ignore' and sp.returncode :
-        print >>sys.stderr, "Got return code %d while executing:\n  %s" % (sp.returncode, ' '.join(cmd))
-        exit(1)
-    return out
-
-def do_exec(cmd, errors='abort') :
-    sp = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
-    sp.wait()
-    if errors != 'ignore' and sp.returncode :
-        raise Exception("***(2) CMD FAILED");
+YZ_CC        = []
+YZ_PARSER    = None
+YZ_DEP_FILE  = None
+YZ_CL_FILE   = None
+YZ_SHELL     = None
+YZ_IGNORE    = ""
+YZ_CV_FILE   = None
+YZ_PP_SUITE  = None
+YZ_SYSBIN    = {}
+YZ_TOPDIR    = None
+YZ_PJ_FILE   = None
 
 def to_abs_path(x) :
     return os.path.realpath(x)
 
+def get_topdir(make_args) :
+    topdir = os.getcwd()
+    args = make_args.split()
+    for i,a in enumerate(args) :
+        if a == '-C' :
+            topdir = os.path.realpath(args[i+1])
+            break
+        elif a.find('-C') == 0 :
+            topdir = os.path.realpath(a[2:])
+            break
+#    print >>sys.stderr, "TOPDIR: %s" % topdir
+    return topdir
+
+def generate_cc_scripts() :
+    stexts = ''
+    for cc in YZ_CC:
+        get_sys_bin(cc)
+        cc_path = YZ_SYSBIN[cc]
+
+        tmp_args = priv_args + ' --yz-cc=' + cc + ' --yz-verbose=0 '
+        stexts += 'function ' + cc + '()\n{\n    '
+        stexts += YZ_PARSER + tmp_args
+        stexts += ' "$@" || return $?\n'
+        stexts += '    ' + cc_path
+        stexts += ' $*\n}\n'
+
+        cxx = ''
+        if re.match(r'gcc$', cc) :
+            cxx = cc[0:len(cc)-3] + 'g++'
+            get_sys_bin(cxx)
+            cxx_path = YZ_SYSBIN[cxx]
+            stexts += 'function ' + cxx + '()\n{\n    '
+            stexts += YZ_PARSER + tmp_args
+            stexts += ' "$@" || return $?\n'
+            stexts += '    ' + cxx_path
+            stexts += ' $*\n}\n'
+
+        stexts += 'export -f ' + cc + ' ' + cxx + '\n'
+
+    return stexts
+
+def get_sys_bin(name) :
+    sb = spawn.find_executable(name)
+    if not sb :
+        print >>sys.stderr, "%s is required to be installed" % name
+        exit(2)
+    YZ_SYSBIN[name] = sb
 
 #================================================
-#
 #  The main entry
-#
 #================================================
+
+get_sys_bin('which')
+get_sys_bin('bash')
+get_sys_bin('make')
 
 short_options = ''
-long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', 'yz-save-cl=',
+long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', 'yz-save-cl=', 'yz-save-proj=',
     'yz-shell=', 'yz-ignore=', "yz-save-condvals=", "yz-postprocess="])
 
 a, make_args = cu_lib.collect_options(short_options, long_options, sys.argv[1:])
-
-'''
-print a
-print '--------------------------------'
-print make_args
-print '--------------------------------'
-exit(0)
-'''
 
 try:
     opts, args = getopt.gnu_getopt(a, short_options, long_options)
@@ -67,7 +97,7 @@ for o, a in opts:
     if o == 'cc':
         YZ_CC.append(a)
     elif o == 'xcc':
-        YZ_PXCC = to_abs_path(a)
+        YZ_PARSER = to_abs_path(a)
     elif o.find('save-dep') == 0 :
         YZ_DEP_FILE = to_abs_path(a)
     elif o == 'save-cl' :
@@ -77,76 +107,52 @@ for o, a in opts:
     elif o == 'ignore' :
         YZ_IGNORE += ' --yz-ignore=' + a
     elif o == 'save-condvals':
-        YZ_CONDVAL = to_abs_path(a)
+        YZ_CV_FILE = to_abs_path(a)
     elif o == 'postprocess':
         YZ_PP_SUITE = to_abs_path(a)
+    elif o == 'save-proj':
+        YZ_PJ_FILE = a
 
-if YZ_PXCC == None:
-    YZ_PXCC = to_abs_path(os.path.dirname(sys.argv[0]) + "/ycpp.exe")
+if YZ_PARSER == None:
+    YZ_PARSER = to_abs_path(os.path.dirname(sys.argv[0]) + "/ycpp.exe")
 
-my_args = ' '
+priv_args = ' '
 
 if YZ_PP_SUITE :
-    my_args += '--yz-no-output'
-
+    priv_args += '--yz-no-output'
     if not os.path.exists(YZ_PP_SUITE) :
         os.mkdir(YZ_PP_SUITE)
     if not os.path.isdir(YZ_PP_SUITE) :
         print >>sys.stderr, "Cannot create dir \"%s\"" % YZ_PP_SUITE
         exit(1)
-    YZ_DEP_FILE = YZ_PP_SUITE + '/.depends.txt'
-    YZ_CL_FILE  = YZ_PP_SUITE + '/.commands.txt'
-    YZ_CONDVAL  = YZ_PP_SUITE + '/.condvals.txt'
+    YZ_DEP_FILE = YZ_PP_SUITE + '/depends.txt'
+    YZ_CL_FILE  = YZ_PP_SUITE + '/commands.txt'
+    YZ_CV_FILE  = YZ_PP_SUITE + '/condvals.txt'
+    YZ_PJ_FILE  = YZ_PP_SUITE + '/projlist.txt'
 else :
-    my_args += '--yz-in-place=.bak'
+    priv_args += '--yz-in-place=.bak'
+
 if YZ_DEP_FILE is not None :
-    my_args += ' --yz-save-dep=' + YZ_DEP_FILE
+    priv_args += ' --yz-save-dep=' + YZ_DEP_FILE
     open(YZ_DEP_FILE, "w").close()
+
 if YZ_CL_FILE is not None :
-    my_args += ' --yz-save-cl=' + YZ_CL_FILE
+    priv_args += ' --yz-save-cl=' + YZ_CL_FILE
     open(YZ_CL_FILE, "w").close()
+
 if YZ_IGNORE :
-    my_args += YZ_IGNORE
-if YZ_CONDVAL :
-    open(YZ_CONDVAL,"w").close()
-    my_args += ' --yz-save-condvals=' + YZ_CONDVAL
+    priv_args += YZ_IGNORE
 
-def make_script_texts() :
-    stexts = ''
-    for cc in YZ_CC:
-        cc_path = do_execp(['which', cc]).rstrip('\r\n')
-        print "cc on %s" % cc_path
-        if cc_path == '':
-            print >>sys.stderr, "No such file: ", cc
-            exit(2)
+if YZ_CV_FILE :
+    open(YZ_CV_FILE,"w").close()
+    priv_args += ' --yz-save-condvals=' + YZ_CV_FILE
 
-        my_args1 = my_args + ' --yz-cc=' + cc + ' --yz-verbose=0 '
-        stexts += 'function ' + cc + '()\n{\n    '
-        stexts += YZ_PXCC + my_args1
-        stexts += ' "$@" || return $?\n'
-        stexts += '    ' + cc_path
-        stexts += ' $*\n}\n'
+YZ_TOPDIR = get_topdir(make_args)
+if YZ_CV_FILE or YZ_DEP_FILE :
+    priv_args += ' --yz-topdir=' + YZ_TOPDIR
 
-        cxx = ''
-        if re.match(r'gcc$', cc) :
-            cxx = cc[0:len(cc)-3] + 'g++'
-            cxx_path = do_execp(['which', cxx]).rstrip('\r\n')
-            if cxx_path == '' :
-                print >>sys.stderr, "No such file: ", cxx
-                exit(2)
-            stexts += 'function ' + cxx + '()\n{\n    '
-            stexts += YZ_PXCC + my_args1
-            stexts += ' "$@" || return $?\n'
-            stexts += '    ' + cxx_path
-            stexts += ' $*\n}\n'
-
-        stexts += 'export -f ' + cc + ' ' + cxx + '\n'
-
-    return stexts
-
-final_commands = make_script_texts()
-
-final_commands += do_execp(['which', 'make']).rstrip('\r\n')
+final_commands =  generate_cc_scripts()
+final_commands += YZ_SYSBIN['make']
 final_commands += make_args
 if YZ_SHELL != None :
     final_commands += ' SHELL=' + YZ_SHELL + ' '
@@ -155,24 +161,42 @@ final_commands += '\n'
 print final_commands
 #exit(2)
 
-sp = subprocess.Popen(final_commands, shell=True, executable='/bin/bash')
-sp.wait()
-if sp.returncode :
-    print >>sys.stderr, "yMake got error %d" % sp.returncode
+subprocess.check_call(final_commands, shell=True, executable=YZ_SYSBIN['bash'])
+
+#sp = subprocess.Popen(final_commands, shell=True, executable=YZ_SYSBIN['bash'])
+#sp.wait()
+#if sp.returncode :
+#    print >>sys.stderr, "yMake got error %d" % sp.returncode
+#    exit(sp.returncode)
 
 if YZ_PP_SUITE :
+    print "Post processing ..."
     dir = os.path.realpath(sys.argv[0] + '/../')
-    cl = "%s/tools/cv-parse.py -o %s/tmp.pp %s" % (dir, YZ_PP_SUITE, YZ_CONDVAL)
-    print cl
-    sp = subprocess.Popen(cl, shell=True)
-    sp.wait()
-    if sp.returncode :
-        print >>sys.stderr, "Error 1"
-        exit(sp.returncode)
-    sp = subprocess.Popen("%s/tools/do-strip.py %s -c %s/tmp.pp" % (dir, YZ_IGNORE, YZ_PP_SUITE), shell=True)
-    sp.wait()
-    if sp.returncode :
-        print >>sys.stderr, "Error 2"
-        exit(sp.returncode)
+    cl = "%s/tools/cl-tool cparse -o %s/tmp.pp %s" % (dir, YZ_PP_SUITE, YZ_CV_FILE)
+    subprocess.check_call(cl, shell=True)
 
-exit(sp.returncode)
+    cl = "%s/tools/cl-tool strip %s -f %s/tmp.pp --all" % (dir, YZ_IGNORE, YZ_PP_SUITE)
+    sp = subprocess.check_call(cl, shell=True)
+
+if YZ_PJ_FILE :
+    pfiles = set()
+    fd = open(YZ_DEP_FILE, "r")
+    if fd is None :
+        print >>sys.stderr, "Cannot open %s for reading" % YZ_DEP_FILE
+        exit(2)
+    for line in fd :
+        fx = line.rstrip('\r\n').split()
+        if len(fx) > 0 :
+            pfiles.add(fx[0])
+    fd.close()
+
+    fd = open(YZ_PJ_FILE, "w")
+    print >>fd, '#TOPDIR %s' % YZ_TOPDIR
+    for line in pfiles :
+        if line.find(YZ_TOPDIR+'/') == 0 :
+            print >>fd, line[len(YZ_TOPDIR)+1:]
+        else :
+            print >>fd, line
+    fd.close()
+
+

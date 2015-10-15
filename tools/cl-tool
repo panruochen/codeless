@@ -1,0 +1,16 @@
+#!/usr/bin/env python
+
+import os, sys, subprocess
+
+if len(sys.argv) <= 2 :
+    print >>sys.stderr, "%s ACTION [options]" % (os.path.basename(sys.argv[0]))
+    exit(1)
+
+action_table = { 'cparse' : 'parse_cv', 'dparse' : 'parse_dep', 'strip' : 'strip' }
+
+a = sys.argv[1]
+if a in action_table :
+    sys.path.append(os.path.realpath(os.path.dirname(sys.argv[0])))
+    exec('from action_%s import *\n' % action_table[a])
+    main(2)
+

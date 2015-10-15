@@ -4,12 +4,13 @@
 #include <assert.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "codeless.h"
+#include "cc_string.h"
+#include "cc_array.h"
 #include "utils.h"
-
 
 bool find(const CC_ARRAY<CC_STRING>& haystack, const CC_STRING& needle)
 {
@@ -21,7 +22,6 @@ bool find(const CC_ARRAY<CC_STRING>& haystack, const CC_STRING& needle)
 	}
 	return false;
 }
-
 
 void join(CC_ARRAY<CC_STRING>& x, const CC_ARRAY<CC_STRING>& y)
 {
@@ -71,6 +71,4 @@ void fatal(int exit_status, const char *format, ...)
     va_end(ap);
 	exit(exit_status);
 }
-
-
 
