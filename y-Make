@@ -4,22 +4,25 @@
 
 YZ_EXTDIR = 'pyext'
 
-import re, os, sys, getopt, subprocess
+import re, os, sys, getopt, subprocess, signal, time
 from distutils import spawn
 sys.path.append(os.path.dirname(sys.argv[0]) + '/' + YZ_EXTDIR)
 import cu_lib
 
 YZ_CC        = []
 YZ_PARSER    = None
+YZ_JOB_SVR   = None
+YZ_SVR_ADDR  = '/var/tmp/cl-server'
 YZ_DEP_FILE  = None
 YZ_CL_FILE   = None
 YZ_SHELL     = None
-YZ_IGNORE    = ""
+YZ_IGNORE    = []
 YZ_CV_FILE   = None
 YZ_PP_SUITE  = None
 YZ_SYSBIN    = {}
 YZ_TOPDIR    = None
 YZ_PJ_FILE   = None
+YZ_SHOW_PERF = False
 
 def to_abs_path(x) :
     return os.path.realpath(x)
@@ -43,7 +46,7 @@ def generate_cc_scripts() :
         get_sys_bin(cc)
         cc_path = YZ_SYSBIN[cc]
 
-        tmp_args = priv_args + ' --yz-cc=' + cc + ' --yz-verbose=0 '
+        tmp_args = ' ' + ' '.join(priv_args) + ' --yz-cc=' + cc + ' --yz-verbose=0'
         stexts += 'function ' + cc + '()\n{\n    '
         stexts += YZ_PARSER + tmp_args
         stexts += ' "$@" || return $?\n'
@@ -81,8 +84,8 @@ get_sys_bin('bash')
 get_sys_bin('make')
 
 short_options = ''
-long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', 'yz-save-cl=', 'yz-save-proj=',
-    'yz-shell=', 'yz-ignore=', "yz-save-condvals=", "yz-postprocess="])
+long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', 'yz-save-cl=', 'yz-save-proj=', 'yz-show-perf',
+    'yz-shell=', 'yz-ignore=', "yz-save-condvals=", "yz-postprocess=", "yz-start-server=", "yz-server-addr="])
 
 a, make_args = cu_lib.collect_options(short_options, long_options, sys.argv[1:])
 
@@ -105,21 +108,35 @@ for o, a in opts:
     elif o == 'shell' :
         YZ_SHELL = a
     elif o == 'ignore' :
-        YZ_IGNORE += ' --yz-ignore=' + a
+        YZ_IGNORE.append('--yz-ignore=' + a)
     elif o == 'save-condvals':
         YZ_CV_FILE = to_abs_path(a)
     elif o == 'postprocess':
         YZ_PP_SUITE = to_abs_path(a)
     elif o == 'save-proj':
         YZ_PJ_FILE = a
+    elif o == 'start-server':
+        if len(a) == 0 or a[0] == ' ' or a[0] == '\t' :
+            YZ_JOB_SVR = to_abs_path(os.path.dirname(sys.argv[0]) + "/cl-server.exe")
+        else :
+            YZ_JOB_SVR = to_abs_path(a)
+    elif o == 'server-addr':
+        YZ_SVR_ADDR = to_abs_path(a)
+    elif o == 'show-perf':
+        YZ_SHOW_PERF = True
 
-if YZ_PARSER == None:
-    YZ_PARSER = to_abs_path(os.path.dirname(sys.argv[0]) + "/ycpp.exe")
+if YZ_PARSER is None:
+    YZ_PARSER = to_abs_path(os.path.dirname(sys.argv[0]) + "/cl.exe")
 
-priv_args = ' '
+priv_args = []
+jsvr_args = []
+
+if YZ_JOB_SVR is not None :
+    jsvr_args += [YZ_JOB_SVR, '--server-addr=' + YZ_SVR_ADDR]
+    priv_args.append('--yz-server-addr=' + YZ_SVR_ADDR)
 
 if YZ_PP_SUITE :
-    priv_args += '--yz-no-output'
+    priv_args.append('--yz-no-output')
     if not os.path.exists(YZ_PP_SUITE) :
         os.mkdir(YZ_PP_SUITE)
     if not os.path.isdir(YZ_PP_SUITE) :
@@ -130,26 +147,39 @@ if YZ_PP_SUITE :
     YZ_CV_FILE  = YZ_PP_SUITE + '/condvals.txt'
     YZ_PJ_FILE  = YZ_PP_SUITE + '/projlist.txt'
 else :
-    priv_args += '--yz-in-place=.bak'
+    priv_args.append('--yz-in-place=.bak')
 
 if YZ_DEP_FILE is not None :
-    priv_args += ' --yz-save-dep=' + YZ_DEP_FILE
-    open(YZ_DEP_FILE, "w").close()
+    y = '--yz-save-dep=' + YZ_DEP_FILE
+    priv_args.append(y)
+    if YZ_JOB_SVR is None :
+        open(YZ_DEP_FILE, "w").close()
+    else :
+        jsvr_args.append(y)
 
 if YZ_CL_FILE is not None :
-    priv_args += ' --yz-save-cl=' + YZ_CL_FILE
-    open(YZ_CL_FILE, "w").close()
-
-if YZ_IGNORE :
-    priv_args += YZ_IGNORE
+    y = '--yz-save-cl=' + YZ_CL_FILE
+    priv_args.append(y)
+    if YZ_JOB_SVR is None :
+        open(YZ_CL_FILE, "w").close()
+    else :
+        jsvr_args.append(y)
 
 if YZ_CV_FILE :
-    open(YZ_CV_FILE,"w").close()
-    priv_args += ' --yz-save-condvals=' + YZ_CV_FILE
+    y = '--yz-save-condvals=' + YZ_CV_FILE
+    priv_args.append(y)
+    if YZ_JOB_SVR is None :
+        open(YZ_CV_FILE,"w").close()
+    else :
+        jsvr_args.append(y)
+
+if len(YZ_IGNORE) :
+    priv_args += YZ_IGNORE
+
 
 YZ_TOPDIR = get_topdir(make_args)
 if YZ_CV_FILE or YZ_DEP_FILE :
-    priv_args += ' --yz-topdir=' + YZ_TOPDIR
+    priv_args.append('--yz-topdir=' + YZ_TOPDIR)
 
 final_commands =  generate_cc_scripts()
 final_commands += YZ_SYSBIN['make']
@@ -161,13 +191,29 @@ final_commands += '\n'
 print final_commands
 #exit(2)
 
-subprocess.check_call(final_commands, shell=True, executable=YZ_SYSBIN['bash'])
+if YZ_JOB_SVR is not None :
+    print "Start sever: %s" % ' '.join(jsvr_args)
+    sp_svr = subprocess.Popen(jsvr_args)
+    if sp_svr is None :
+        print >>sys.stderr, "Can not start server"
+        exit(2)
 
-#sp = subprocess.Popen(final_commands, shell=True, executable=YZ_SYSBIN['bash'])
-#sp.wait()
-#if sp.returncode :
-#    print >>sys.stderr, "yMake got error %d" % sp.returncode
-#    exit(sp.returncode)
+begin_tm  = time.time()
+subprocess.check_call(final_commands, shell=True, executable=YZ_SYSBIN['bash'])
+finish_tm = time.time()
+
+if YZ_JOB_SVR is not None :
+    os.kill(sp_svr.pid, signal.SIGUSR1)
+    sp_svr.wait()
+    if sp_svr.returncode :
+        print >>sys.stderr, "yMake got error %d" % sp_svr.returncode
+        exit(sp_svr.returncode)
+
+#sp_make = subprocess.Popen(final_commands, shell=True, executable=YZ_SYSBIN['bash'])
+#sp_make.wait()
+#if sp_make.returncode :
+#    print >>sys.stderr, "yMake got error %d" % sp_make.returncode
+#    exit(sp_make.returncode)
 
 if YZ_PP_SUITE :
     print "Post processing ..."
@@ -175,8 +221,8 @@ if YZ_PP_SUITE :
     cl = "%s/tools/cl-tool cparse -o %s/tmp.pp %s" % (dir, YZ_PP_SUITE, YZ_CV_FILE)
     subprocess.check_call(cl, shell=True)
 
-    cl = "%s/tools/cl-tool strip %s -f %s/tmp.pp --all" % (dir, YZ_IGNORE, YZ_PP_SUITE)
-    sp = subprocess.check_call(cl, shell=True)
+    cl = "%s/tools/cl-tool strip %s -f %s/tmp.pp --all" % (dir, ' '.join(YZ_IGNORE), YZ_PP_SUITE)
+    sp_make = subprocess.check_call(cl, shell=True)
 
 if YZ_PJ_FILE :
     pfiles = set()
@@ -199,4 +245,5 @@ if YZ_PJ_FILE :
             print >>fd, line
     fd.close()
 
-
+#if YZ_SHOW_PERF :
+print "make is excuted during %.2f seconds" % (finish_tm - begin_tm)

@@ -17,7 +17,6 @@
 #include "ParserContext.h"
 #include "log.h"
 #include "GlobalVars.h"
-#include "Fol.h"
 
 static void new_define(MemFile& mfile, const char *option)
 {
@@ -125,6 +124,8 @@ enum {
 	COP_CC_PATH,
 	COP_CLEANER_MODE,
 	COP_IGNORE,
+	COP_SVR_ADDR,
+	COP_RTDIR,
 	COP_VERBOSE,
 	COP_TOPDIR,
 	COP_HELP,
@@ -222,18 +223,18 @@ retry:
 			save_my_args();
 			break;
 		case COP_SAVE_COMMAND_LINE:
-			of_cl = optarg;
+			of_array[MSGT_CL] = optarg;
 			save_my_args();
 			break;
 		case COP_SAVE_DEPENDENCY:
 			if(optarg != NULL)
-				of_dep = optarg;
+				of_array[MSGT_DEP] = optarg;
 			else
-				of_dep = '\x1';
+				of_array[MSGT_DEP] = '\x1';
 			save_my_args();
 			break;
 		case COP_SAVE_CONDVALS:
-			of_con = optarg;
+			of_array[MSGT_CV] = optarg;
 			save_my_args();
 			break;
 		case COP_IN_PLACE:
@@ -284,6 +285,10 @@ retry:
 			save_my_args();
 			break;
 
+		case COP_SVR_ADDR:
+			server_addr = optarg;
+			break;
+
 		case ':':
 		case '?':
 		default:
@@ -312,8 +317,8 @@ retry:
 		outfile = OF_NULL;
 
 	CB_BEGIN
-	const char *xe = !of_con.isnull() ? "--yz-save-condvals" :
-		(!of_dep.isnull() ? "--yz-save-dep" : NULL);
+	const char *xe = !of_array[MSGT_CV].isnull() ? "--yz-save-condvals" :
+		(!of_array[MSGT_DEP].isnull() ? "--yz-save-dep" : NULL);
 	if( xe && topdir.isnull() ) {
 		errmsg.format("--yz-topdir must be specified if %s exists", xe);
 		goto error;
@@ -368,6 +373,8 @@ int ParserContext::get_options(int argc, char *argv[])
 		{"yz-cc-path",         1, 0, COP_CC_PATH },
 		{"yz-cleaner-mode",    0, 0, COP_CLEANER_MODE },
 		{"yz-ignore",          1, 0, COP_IGNORE },
+		{"yz-server-addr",     1, 0, COP_SVR_ADDR },
+		{"yz-rtdir",           1, 0, COP_RTDIR },
 		{"yz-verbose",         1, 0, COP_VERBOSE },
 		{"yz-help",            0, 0, COP_HELP },
 		{"include",  1, 0, COP_INCLUDE},

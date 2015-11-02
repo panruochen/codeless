@@ -1,20 +1,24 @@
-#ifndef __FS_LIBRARY_H
-#define __FS_LIBRARY_H
+#ifndef __UTILS_H
+#define __UTILS_H
 
 #include "cc_string.h"
+#include "cc_array.h"
+#include "base.h"
+
+bool     find(const CC_ARRAY<CC_STRING>& haystack, const CC_STRING& needle);
+void     join(CC_ARRAY<CC_STRING>& x, const CC_ARRAY<CC_STRING>& y);
+void     ujoin(CC_ARRAY<CC_STRING>& uarray, const char *elem);
+ssize_t  getline(FILE *fp, CC_STRING& line);
+void     fatal(int exit_status, const char *fmt, ...);
+
+SOURCE_TYPE check_source_type(const CC_STRING& filename);
 
 #if     ! defined(O_BINARY)
 #define O_BINARY 0
 #endif
 
-FILE*      fol_afopen(const CC_STRING& path);
-int        fol_fdappend(int fd, const void *buf, off_t n);
-void       fol_append(const CC_STRING& path, const void *buf, size_t n);
-void       fol_write(const CC_STRING& path, const void *buf, size_t n);
-int        fol_copy(const CC_STRING& src, const CC_STRING& dst);
 bool       fol_exist(const CC_STRING& path);
 int        fol_mkdir(const CC_STRING *path);
-int        fol_copy_with_parent(const CC_STRING& src, const CC_STRING& dst);
 CC_STRING  fol_realpath(const CC_STRING& src);
 CC_STRING  fol_dirname(const CC_STRING& path);
 

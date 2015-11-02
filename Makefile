@@ -1,33 +1,17 @@
-EXTRA_CFLAGS    := -ggdb #-O3
-EXTRA_CFLAGS    += -Wall ##-Wno-unused-result #-Wno-format
-DEFINES         := -DSANITY_CHECK
-SRCS            := ./ ./support/
-INCS            := $(SRCS)
-TARGET_TYPE     := EXE
-TARGET          := ycpp.exe
-LIBS            := -lpthread
-OBJ_DIR         := .objs
-SRC_EXTS        := cpp
-TARGET_DEPENDS  := precedence-matrix.h help.h
+.PHONY: all clean
 
-##VERBOSE_COMMAND := y
+define DEF_TARGET
+$1:
+	make -C cl $$@
+	make -C server $$@
+endef
 
-include common_Makefile
-
-SCRIPTS_DIR := scripts
-
-precedence-matrix.h: $(SCRIPTS_DIR)/c_opr.bnf $(SCRIPTS_DIR)/ssymid.cfg ./$(SCRIPTS_DIR)/bnf_parser.sh
-	@echo GEN $@; if test ! -x "$(word 3,$^)" ; then chmod +x "$(word 3,$^)"; fi; \
-	$(word 3,$^) -m g1_oprmx -s g1_oprset -c $(word 1,$^) $(word 2,$^) >$@ || { rm -rf $@; exit 1; }
-
-help.h: help.txt
-	@ { echo '#ifndef __HELP_H'; \
-		echo '#define __HELP_H'; \
-		echo 'static const char help_msg[] ='; \
-		sed -e 's/^/"/' -e 's/$$/\\n"/' $<; \
-		echo ';\n#endif'; } > $@
+$(eval $(call DEF_TARGET,all))
+$(eval $(call DEF_TARGET,clean))
+$(eval $(call DEF_TARGET,distclean))
 
 .PHONY: run
 run: all
 	@chmod +x run-demo
 	./run-demo
+

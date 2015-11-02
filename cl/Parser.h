@@ -13,6 +13,7 @@
 #include "File.h"
 #include "Exception.h"
 #include "ParserContext.h"
+#include "FileWriter.h"
 
 #define INV_LN           0xFFFFEEFF
 
@@ -28,6 +29,7 @@ protected:
 	static const char *preprocessors[];
 	size_t       num_preprocessors;
 	ParserContext   *rtc;
+	FileWriter      *writers[MSGT_MAX];
 
 	/*-------------------------------------------------------------
 	 *  class for conditional chain
@@ -251,6 +253,9 @@ protected:
 	bool check_file_processed(const CC_STRING& filename);
 
 	inline void mark_comment_start();
+
+	void SaveDepInfo(const CC_STRING& s);
+	void SaveCondValInfo(const CC_STRING& s);
 
 public:
 	CC_STRING errmsg;

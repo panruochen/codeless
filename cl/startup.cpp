@@ -12,9 +12,9 @@
 #include <libgen.h>
 
 #include "Parser.h"
-#include "Fol.h"
 #include "GlobalVars.h"
 #include "utils.h"
+#include "misc.h"
 
 static void __NO_USE__ show_usage_and_exit(int exit_code);
 
@@ -67,21 +67,23 @@ static CC_STRING MakeDepFileName(const char *filename)
 
 static void save_command_line(const CC_STRING& filename, const CC_STRING& host_cc, const CC_STRING& cc_args, const CC_STRING& my_args )
 {
-	char cwd[260];
-	CC_STRING s;
+	if(gvar_file_writers[MSGT_CL]) {
+		char cwd[260];
+		CC_STRING s;
 
-	getcwd(cwd, sizeof(cwd));
-	s += "cd ";
-	s += cwd;
-	s += '\n';
+		getcwd(cwd, sizeof(cwd));
+		s += "cd ";
+		s += cwd;
+		s += '\n';
 
-	s += host_cc;
-	s += ' ';
-	s += cc_args;
-	s += "  ## ";
-	s += my_args;
-	s += "\n\n";
-	fol_append(filename.c_str(), s.c_str(), s.size());
+		s += host_cc;
+		s += ' ';
+		s += cc_args;
+		s += "  ## ";
+		s += my_args;
+		s += "\n\n";
+		gvar_file_writers[MSGT_CL]->Write(s.c_str(), s.size());
+	}
 }
 
 static CC_STRING get_cc(const CC_STRING& cc)
@@ -163,6 +165,29 @@ static void get_host_cc_predefined_macros(const CC_STRING& host_cc, MemFile& pre
 		pclose(fp);
 }
 
+static bool create_file_writers(ParserContext *ctx)
+{
+	unsigned int i;
+
+	for(i = 0; i < MSGT_MAX; i++) {
+		if(ctx->of_array[i].isnull())
+			continue;
+		if(ctx->server_addr.isnull())
+			gvar_file_writers[i] = new OsFileWriter(ctx->of_array[i]);
+		else {
+			DsFileWriter *fw = new DsFileWriter(i);
+			if( fw->Connect(ctx->server_addr.c_str()) < 0 ) {
+				for(i = 0; i < MSGT_MAX; i++)
+					if(gvar_file_writers[i])
+						delete gvar_file_writers[i];
+				return false;
+			}
+			gvar_file_writers[i] = fw;
+		}
+	}
+	return true;
+}
+
 int main(int argc, char *argv[])
 {
 	ParsedState tcc_context, *pstate = &tcc_context;
@@ -177,11 +202,11 @@ int main(int argc, char *argv[])
 	if( yctx.print_help )
 		show_usage_and_exit(0);
 
-//	fprintf(stderr, "outfile = %d\n", yctx.outfile);
-//	fprintf(stderr, "baksuffix = %zu,%s\n", yctx.baksuffix.size(), yctx.baksuffix.c_str());
+	if( ! create_file_writers(&yctx) )
+		fatal(EPERM, "Can not create file writers\n");
 
-	if(!yctx.of_cl.isnull())
-		save_command_line(yctx.of_cl.c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
+	if(!yctx.of_array[MSGT_CL].isnull())
+		save_command_line(yctx.of_array[MSGT_CL].c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
 
 	if( gv_preprocess_mode ) {
 		if(yctx.cc.isnull())
@@ -217,9 +242,9 @@ int main(int argc, char *argv[])
 		const char *current_file = yctx.source_files[i].c_str();
 		CC_STRING s;
 
-		if( ! yctx.of_dep.isnull() ) {
-			if( yctx.of_dep[0] == '\x1' )
-				yctx.of_dep = MakeDepFileName(current_file);
+		if( ! yctx.of_array[MSGT_DEP].isnull() ) {
+			if( yctx.of_array[MSGT_DEP][0] == '\x1' )
+				yctx.of_array[MSGT_DEP] = MakeDepFileName(current_file);
 		}
 
 		file.SetFileName(current_file);

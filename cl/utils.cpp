@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <libgen.h>
 
 #include "cc_string.h"
 #include "cc_array.h"
@@ -72,3 +73,30 @@ void fatal(int exit_status, const char *format, ...)
 	exit(exit_status);
 }
 
+bool fol_exist(const CC_STRING& filename)
+{
+	struct stat stb;
+	return stat(filename, &stb) == 0;
+}
+
+
+CC_STRING fol_dirname(const CC_STRING& path)
+{
+	char *tmp;
+	CC_STRING dir;
+
+	tmp = strdup(path.c_str());
+	dir = dirname(tmp);
+	free(tmp);
+	return dir;
+}
+
+#include "realpath.h"
+CC_STRING fol_realpath(const CC_STRING& src)
+{
+    char dest[4096];
+
+	if( ! y_realpath(dest, sizeof(dest), src.c_str()) )
+		return CC_STRING("");
+	return CC_STRING(dest);
+}

@@ -1,6 +1,7 @@
 #ifndef __PARSER_CONTEXT_H
 #define __PARSER_CONTEXT_H
 
+#include "msgfmt.h"
 #include "File.h"
 
 class ParserContext {
@@ -25,9 +26,7 @@ public:
 //	CC_STRING            outfile;
 
 	/* Additional output files */
-	CC_STRING            of_dep; /* dependencies */
-	CC_STRING            of_cl;  /* command line */
-	CC_STRING            of_con; /* conditional evaluation */
+	CC_STRING            of_array[MSGT_MAX];
 
 	CC_STRING            baksuffix;
 	CC_STRING            cc;
@@ -43,6 +42,8 @@ public:
 	bool                 print_help;
 	char                 as_lc_char;  // Assembler line command char
 	OF_TYPE              outfile;
+
+	CC_STRING            server_addr;
 
 	CC_STRING            errmsg;
 	int                  argc;

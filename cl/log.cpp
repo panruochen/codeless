@@ -40,7 +40,7 @@ void log(LOG_VERB verb, const char *format, ...)
     if(log_fd == -1) {
         log_fd = open(log_file, O_CREAT|O_WRONLY|O_TRUNC, 0664);
         if(log_fd == -1)
-            fatal(133, "Cannot open \"%s\": %s\n", log_file, strerror(errno));
+            fatal(EACCES, "Cannot open \"%s\": %s\n", log_file, strerror(errno));
     }
 
     buf = lbuf;

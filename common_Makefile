@@ -195,7 +195,7 @@ ifeq ($(strip $(sources)),)
 $(error Empty source list! Please check both SRCS and SRC_EXTS are correctly set.)
 endif
 
-object_dirs = $(call remap_objdir,$(patsubst %/./,%,$(addprefix $(objdir),$(sort $(dir $(sources))))) $(dir $(TARGET)))
+object_dirs = $(call remap_objdir,$(patsubst %/./,%,$(addprefix $(objdir),$(sort $(dir $(sources)))))) $(dir $(TARGET))
 
 #-------------------------------------#
 # Get the list of all object files    #

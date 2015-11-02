@@ -25,7 +25,7 @@ inline Parser::IncludedFile *Parser::PopIncludedFile()
 
 inline bool Parser::has_dep_file(void)
 {
-	return rtc && rtc->of_dep.size() != 0;
+	return rtc && !rtc->of_array[MSGT_DEP].isnull();
 }
 
 inline Parser::CConditionalChain::CConditionalChain()

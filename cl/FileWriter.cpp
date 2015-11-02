@@ -17,38 +17,11 @@
 #include <errno.h>
 #include <libgen.h>
 
-#include "Fol.h"
+#include "FileWriter.h"
 #include "utils.h"
 
-int fol_fdappend(int fd, const void *buf, off_t n)
-{
-	struct flock flock;
-	off_t offset;
+#if 0
 
-	offset = lseek(fd, 0, SEEK_END);
-	flock.l_type   = F_WRLCK;
-	flock.l_whence = SEEK_SET;
-	flock.l_start  = offset;
-	flock.l_len    = n;
-	flock.l_pid    = 0;
-	if( fcntl(fd, F_SETLKW, &flock) == 0 ) {
-		write(fd, buf, n);
-		flock.l_type = F_UNLCK;
-		fcntl(fd, F_SETLKW, &flock);
-		return 0;
-	} else {
-		fatal(130, "File system error %s\n", strerror(errno));
-	}
-	return -1;
-}
-
-void fol_append(const CC_STRING& filename, const void *buf, size_t n)
-{
-	int fd;
-	fd = open(filename.c_str(), O_CREAT|O_BINARY|O_WRONLY|O_APPEND, 0664);
-	fol_fdappend(fd, buf, n);
-	close(fd);
-}
 
 void fol_write(const CC_STRING& filename, const void *buf, size_t n)
 {
@@ -74,34 +47,55 @@ FILE *fol_afopen(const CC_STRING& filename)
 		mode = "wb";
 	return fopen(filename, mode);
 }
+#endif
 
-bool fol_exist(const CC_STRING& filename)
+FileWriter::~FileWriter() {}
+
+OsFileWriter::OsFileWriter(const char *filename)
 {
-	struct stat stb;
-	return stat(filename, &stb) == 0;
+	this->filename = filename;
+}
+
+OsFileWriter::OsFileWriter(const CC_STRING& filename)
+{
+	this->filename = filename;
+}
+
+ssize_t OsFileWriter::Write(const void *buf, size_t count)
+{
+	ssize_t retval = count;
+	struct flock flock;
+	off_t offset;
+	int fd = -1;
+
+	fd = open(filename.c_str(), O_CREAT|O_BINARY|O_WRONLY|O_APPEND, 0664);
+	if(fd == -1) {
+		retval = -errno;
+		goto err_ret;
+	}
+
+	offset = lseek(fd, 0, SEEK_END);
+	flock.l_type   = F_WRLCK;
+	flock.l_whence = SEEK_SET;
+	flock.l_start  = offset;
+	flock.l_len    = count;
+	flock.l_pid    = 0;
+	if( fcntl(fd, F_SETLKW, &flock) == 0 ) {
+		write(fd, buf, count);
+		flock.l_type = F_UNLCK;
+		fcntl(fd, F_SETLKW, &flock);
+	} else {
+		retval = -errno;
+		goto err_ret;
+	}
+
+err_ret:
+	if(fd > 0)
+		close(fd);
+	return retval;
 }
 
 
-CC_STRING fol_dirname(const CC_STRING& path)
-{
-	char *tmp;
-	CC_STRING dir;
-
-	tmp = strdup(path.c_str());
-	dir = dirname(tmp);
-	free(tmp);
-	return dir;
-}
-
-#include "realpath.h"
-CC_STRING fol_realpath(const CC_STRING& src)
-{
-    char dest[4096];
-
-	if( ! y_realpath(dest, sizeof(dest), src.c_str()) )
-		return CC_STRING("");
-	return CC_STRING(dest);
-}
 
 #if 0
 int fol_mkdir(const CC_STRING& dirname)
@@ -200,3 +194,5 @@ error:
 }
 
 #endif
+
+

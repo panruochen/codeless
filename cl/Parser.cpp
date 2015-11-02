@@ -13,7 +13,6 @@
 #include <semaphore.h>
 
 #include "Parser.h"
-#include "Fol.h"
 #include "GlobalVars.h"
 #include "utils.h"
 #include "misc.h"
@@ -749,6 +748,18 @@ void Parser::AddDependency(const char *prefix, const CC_STRING& filename)
 	}
 }
 
+void Parser::SaveCondValInfo(const CC_STRING& s)
+{
+	if(writers[MSGT_CV])
+		writers[MSGT_CV]->Write(s.c_str(), s.size());
+}
+
+void Parser::SaveDepInfo(const CC_STRING& s)
+{
+	if(writers[MSGT_DEP])
+		writers[MSGT_DEP]->Write(s.c_str(), s.size());
+}
+
 static CC_STRING MakeSemaName(const CC_STRING& filename)
 {
 	CC_STRING sname;
@@ -1274,9 +1285,9 @@ bool Parser::RunEngine(size_t cond)
 				return false;
 		} else if (rc == 0) {
 			IncludedFile *ifile = PopIncludedFile();
-			if(!ifile->in_compiler_dir && rtc && !rtc->of_con.isnull()) {
+			if(!ifile->in_compiler_dir && rtc && !rtc->of_array[MSGT_CV].isnull()) {
 				ifile->produce_cr_text();
-				fol_append(rtc->of_con, ifile->cr_text.c_str(), ifile->cr_text.size());
+				SaveCondValInfo(ifile->cr_text);
 			}
 			if(included_files.size() > 0)
 				delete ifile;
@@ -1350,6 +1361,16 @@ bool Parser::DoFile(ParsedState *pstate, size_t num_preprocessors, File *infile,
 		}
 	}
 
+	if(ctx == NULL)
+		memset(writers, 0, sizeof(writers));
+	else {
+		writers[MSGT_CL] = NULL;
+		if(!ctx->of_array[MSGT_DEP].isnull())
+			writers[MSGT_DEP] = gvar_file_writers[MSGT_DEP];
+		if(!ctx->of_array[MSGT_CV].isnull())
+			writers[MSGT_CV] = gvar_file_writers[MSGT_CV];
+	}
+
 	if( num_preprocessors >= COUNT_OF(Parser::preprocessors) )
 		num_preprocessors  = COUNT_OF(Parser::preprocessors);
 	Reset(pstate, num_preprocessors, ctx);
@@ -1367,8 +1388,7 @@ bool Parser::DoFile(ParsedState *pstate, size_t num_preprocessors, File *infile,
 	if( ! RunEngine(0) )
 		goto error;
 
-	if(has_dep_file() && ! deptext.isnull() )
-		fol_append(ctx->of_dep, deptext.c_str(), deptext.size());
+	SaveDepInfo(deptext);
 	if( conditionals.size() != 0 )
 		excep = "Unmatched #if";
 	else
