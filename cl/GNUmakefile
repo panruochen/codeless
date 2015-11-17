@@ -1,4 +1,4 @@
-EXTRA_CFLAGS    := -ggdb -O3
+EXTRA_CFLAGS    := $(COMMON_CFLAGS) -ggdb -O3
 EXTRA_CFLAGS    += -Wall -Wno-unused-result #-Wno-format
 DEFINES         := -DSANITY_CHECK
 SRCS            := ./ ./support/ ../common/
@@ -9,10 +9,11 @@ LIBS            := -lpthread
 OBJ_DIR         := .objs
 SRC_EXTS        := cpp c
 TARGET_DEPENDS  := precedence-matrix.h help.h
+EXTERNAL_DEPENDS:= ../Makefile
 
 VERBOSE_COMMANDS := y
 
-include ../common_Makefile
+include ../tools/common_Makefile
 
 SCRIPTS_DIR := scripts
 

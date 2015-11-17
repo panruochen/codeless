@@ -34,7 +34,8 @@ public:
 	CC_STRING            cc_args;
 	CC_STRING            my_args;
 	CC_ARRAY<CC_STRING>  imacro_files;
-	CC_STRING            topdir;
+	CC_STRING            runtime_dir;
+	CC_STRING            working_dir;
 
 	CC_ARRAY<CC_STRING>  include_files;
 	CC_ARRAY<CC_STRING>  ignore_list;
@@ -54,8 +55,8 @@ public:
 	void   save_my_args();
 
 	bool check_ignore(const CC_STRING& filename);
-	CC_STRING get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
-		bool quote_include, bool include_next, bool *in_sys_dir);
+	bool get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
+		bool quote_include, bool include_next, CC_STRING &path, bool *in_sys_dir);
 	ParserContext();
 };
 

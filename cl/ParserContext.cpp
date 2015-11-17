@@ -17,6 +17,7 @@
 #include "ParserContext.h"
 #include "log.h"
 #include "GlobalVars.h"
+#include "defconfig.h"
 
 static void new_define(MemFile& mfile, const char *option)
 {
@@ -276,7 +277,12 @@ retry:
 			break;
 
 		case COP_TOPDIR:
-			topdir = optarg;
+			working_dir = optarg;
+			save_my_args();
+			break;
+
+		case COP_RTDIR:
+			runtime_dir = getopt_default(optarg, DEF_RT_DIR);
 			save_my_args();
 			break;
 
@@ -319,7 +325,7 @@ retry:
 	CB_BEGIN
 	const char *xe = !of_array[MSGT_CV].isnull() ? "--yz-save-condvals" :
 		(!of_array[MSGT_DEP].isnull() ? "--yz-save-dep" : NULL);
-	if( xe && topdir.isnull() ) {
+	if( xe && working_dir.isnull() ) {
 		errmsg.format("--yz-topdir must be specified if %s exists", xe);
 		goto error;
 	}
@@ -365,7 +371,8 @@ int ParserContext::get_options(int argc, char *argv[])
 		{"yz-save-cl",         1, 0, COP_SAVE_COMMAND_LINE },
 		{"yz-save-dep",        2, 0, COP_SAVE_DEPENDENCY },
 		{"yz-save-condvals",   1, 0, COP_SAVE_CONDVALS },
-		{"yz-topdir",          1, 0, COP_TOPDIR },
+		{"yz-top-dir",         1, 0, COP_TOPDIR },
+		{"yz-rt-dir",          1, 0, COP_RTDIR },
 		{"yz-source",          1, 0, COP_SOURCE },
 		{"yz-in-place",        2, 0, COP_IN_PLACE },
 		{"yz-no-output",       0, 0, COP_NO_OUTPUT },
@@ -374,7 +381,6 @@ int ParserContext::get_options(int argc, char *argv[])
 		{"yz-cleaner-mode",    0, 0, COP_CLEANER_MODE },
 		{"yz-ignore",          1, 0, COP_IGNORE },
 		{"yz-server-addr",     1, 0, COP_SVR_ADDR },
-		{"yz-rtdir",           1, 0, COP_RTDIR },
 		{"yz-verbose",         1, 0, COP_VERBOSE },
 		{"yz-help",            0, 0, COP_HELP },
 		{"include",  1, 0, COP_INCLUDE},
@@ -430,18 +436,20 @@ static bool is_beyond(const CC_STRING& dir, const CC_STRING& topdir)
 	return dir[0] == '/' && dir.find(topdir) != 0;
 }
 
-CC_STRING ParserContext::get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
-	bool quote_include, bool include_next, bool *in_sys_dir)
+bool ParserContext::get_include_file_path(const CC_STRING& included_file, const CC_STRING& current_file,
+	bool quote_include, bool include_next, CC_STRING& path, bool *in_sys_dir)
 {
 	size_t i, count;
-	CC_STRING path;
-	CC_STRING curdir;
+	CC_STRING curdir, path_to_check;
 	struct stat st;
+	CC_ARRAY<CC_STRING> *search_orders[] = { &i_dirs, &isystem_dirs, no_stdinc ? NULL : &compiler_dirs, &after_dirs } ;
 
-	if( included_file.size() == 0 )
-		return CC_STRING("");
-	if( included_file[0] == '/' )
-		return included_file;
+	assert(!included_file.isnull());
+	if( included_file[0] == '/' ) {
+		path_to_check = included_file;
+		path = included_file;
+		goto found;
+	}
 	if(!current_file.isnull()) {
 		curdir = fol_dirname(current_file.c_str());
 		curdir += '/';
@@ -452,14 +460,11 @@ CC_STRING ParserContext::get_include_file_path(const CC_STRING& included_file, c
 	if(quote_include && stat(path.c_str(), &st) == 0 ) {
 		++count;
 		if( ! include_next ) {
-			if(in_sys_dir != NULL)
-//				*in_sys_dir = find(compiler_dirs, curdir);
-				*in_sys_dir = is_beyond(curdir, topdir);
-			return path;
+			path_to_check = curdir;
+			goto found;
 		}
 	}
 
-	CC_ARRAY<CC_STRING> *search_orders[] = { &i_dirs, &isystem_dirs, no_stdinc ? NULL : &compiler_dirs, &after_dirs } ;
 	for(i = 0; i < COUNT_OF(search_orders); i++) {
 		size_t j;
 		if( ! search_orders[i] )
@@ -473,16 +478,18 @@ CC_STRING ParserContext::get_include_file_path(const CC_STRING& included_file, c
 			if( stat(path.c_str(), &st) == 0 ) {
 				++count;
 				if( ! include_next || count == 2) {
-					if(in_sys_dir != NULL)
-//						*in_sys_dir = v = find(compiler_dirs, order[j]);
-						*in_sys_dir = is_beyond(order[j], topdir);
-					return path;
+					path_to_check = order[j];
+					goto found;
 				}
 			}
 		}
 	}
-	path.clear();
-	return path;
+	return false;
+
+found:
+	if(in_sys_dir)
+		*in_sys_dir = is_beyond(path_to_check, working_dir);
+	return true;
 }
 
 ParserContext::ParserContext()

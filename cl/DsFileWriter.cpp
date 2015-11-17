@@ -5,16 +5,19 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <time.h>
+#include <sys/time.h>
 #include <errno.h>
 #include <assert.h>
 #include "msgfmt.h"
 #include "md5.h"
 #include "FileWriter.h"
-
-#define CLI_PATH    "/var/tmp/"      /* +5 for pid = 14 chars */
+#include "ip_sc.h"
+#include "GlobalVars.h"
 
 #if 0
-#define ALOG(fmt,args...)  printf("[C] " fmt,##args)
+#include <sys/time.h>
+//#define ALOG(fmt,args...)  printf("[C] " fmt,##args)
+#define ALOG(fmt,args...)  do { struct timeval tv; gettimeofday(&tv,NULL); fprintf(stderr, "[%08lu.%06lu] [C] " fmt, tv.tv_sec, tv.tv_usec, ##args); } while(0)
 #else
 #define ALOG(fmt,args...)  do{}while(0)
 #endif
@@ -29,7 +32,7 @@ unsigned int DsFileWriter::ref_count;
  * Create a client endpoint and connect to a server.
  * Returns fd if all OK, <0 on error.
  */
-int DsFileWriter::Connect(const char *saddr)
+int DsFileWriter::Connect(const char *rtdir, const char *saddr)
 {
 	int fd = -1, len, saved_errno;
 	struct sockaddr_un saddr_un;
@@ -43,14 +46,15 @@ int DsFileWriter::Connect(const char *saddr)
 
 	svr_addr = strdup(saddr);
 
-	/* create a UNIX domain stream socket */
+	/* Create a UNIX domain stream socket */
 	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
 		goto errout;
 
-	/* fill socket address structure with our address */
+	/* Fill socket address structure with our address */
 	memset(&saddr_un, 0, sizeof(saddr_un));
 	saddr_un.sun_family = AF_UNIX;
-	sprintf(saddr_un.sun_path, "%s%06u", CLI_PATH, getpid());
+//	fprintf(stderr, "%s\n", rtdir);
+	sprintf(saddr_un.sun_path, "%s/%06u", rtdir, getpid());
 	len = offsetof(struct sockaddr_un, sun_path) + strlen(saddr_un.sun_path);
 	cli_addr = strdup(saddr_un.sun_path);
 
@@ -58,7 +62,7 @@ int DsFileWriter::Connect(const char *saddr)
 	if (bind(fd, (struct sockaddr *)&saddr_un, len) < 0)
 		goto errout;
 
-	/* fill socket address structure with server's address */
+	/* Fill socket address structure with server's address */
 	memset(&saddr_un, 0, sizeof(saddr_un));
 	saddr_un.sun_family = AF_UNIX;
 	strcpy(saddr_un.sun_path, svr_addr);
@@ -80,53 +84,61 @@ errout:
 }
 
 
-#define WRITE2(fd,buf,n) do { ret = write(fd,buf,n); if(ret!=(n)) return -1; } while(0)
+#define WRITE_CHECKED(fd,buf,n) do { ret = write(fd,buf,n); if(ret!=(n)){retval = -1; goto write_fail;} } while(0)
 
 ssize_t DsFileWriter::Write(const void *buf, size_t count)
 {
 	int ret;
-	const size_t chunksize = 2048;
+	const size_t chunksize = 0x10000;
 	DsMsg msghdr;
-	const int retval = count + sizeof(msghdr);
-	char *ptr;
-	MD5_CTX md5_context;
+	ssize_t retval = count;
+	uint64_t elapsed;
 
-	MD5_Init(&md5_context);
-	MD5_Update(&md5_context, buf, count);
-	MD5_Final(msghdr.md5, &md5_context);
+	struct timeval tv0;
+	gettimeofday(&tv0, NULL);
 
 	if(count == 0)
 		return 0;
 	msghdr.len   = count + sizeof(msghdr);
-	msghdr.type  = mtype;
+	msghdr.type  = id;
 	msghdr.pid   = getpid();
-	ptr = (char *) &msghdr;
-	if(rand() & 1) {
-		WRITE2(svr_fd, ptr, 1);
-		WRITE2(svr_fd, ptr+1, 1);
-	} else {
-		WRITE2(svr_fd, ptr, 2);
-	}
+#if HAVE_MD5
+	MD5_CTX md5_context;
+	MD5_Init(&md5_context);
+	MD5_Update(&md5_context, buf, count);
+	MD5_Final(msghdr.md5_sum.data, &md5_context);
+	msghdr.flags = DMF_MD5;
+#endif
 
-	WRITE2(svr_fd, ptr+2, sizeof(msghdr) - 2);
+	WRITE_CHECKED(svr_fd, &msghdr, sizeof(msghdr));
 
 	while(count > 0) {
 		const int nb = count >= chunksize ? chunksize : count;
 
-		ret = write(svr_fd, buf, nb);
-		if(ret != nb) {
-			ALOG("(%06u) SendMsg failed, write(%d) = %d, %d/%d bytes sent\n", getpid(), nb, ret, retval - count, retval);
-			return -1;
-		}
+		WRITE_CHECKED(svr_fd, buf, nb);
 		buf = nb + (char*)buf;
 		count -= nb;
 	}
+	ALOG("(%06u) %u bytes sent\n", getpid(), retval);
+
+write_fail:
+	elapsed   = calc_time_elapsed(&tv0);
+
+	ipsc_acc_bytes(gvar_sm, id, msghdr.len);
+	ipsc_acc_usecs(gvar_sm, id, elapsed);
+	ipsc_acc_writes(gvar_sm,id, 1);
+
+	if(retval < 0) {
+		fprintf(stderr, "Write fail\n");
+		exit(EXIT_FAILURE);
+	}
+
 	return retval;
 }
 
 DsFileWriter::DsFileWriter(int mtype_)
 {
-	mtype = mtype_;
+	id = mtype_;
 }
 
 DsFileWriter::~DsFileWriter()

@@ -229,11 +229,15 @@ protected:
 	CC_STRING      deptext;
 	Exception     excep;
 
-	/* line-process based variables */
-	ssize_t comment_start;
-	CC_STRING    line;     /* The comment-stripped line */
-	CC_STRING    raw_line; /* The original input line */
-	CC_STRING    new_line; /* The processed output line */
+	struct ParsedLine {
+		ssize_t comment_start;
+		sym_t   pp_id;
+		CC_STRING parsed; /* The comment-stripped line */
+		CC_STRING from;   /* The original input line */
+		CC_STRING to;     /* The processed output line */
+		int content;      /* The offset of the preprocessing contents */
+	};
+	ParsedLine pline;
 
 	CC_STRING  do_elif(int mode);
 	void       do_define(const char *line);

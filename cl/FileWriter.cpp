@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/file.h>
+#include <sys/time.h>
 
 #include <stdarg.h>
 #include <assert.h>
@@ -19,6 +20,8 @@
 
 #include "FileWriter.h"
 #include "utils.h"
+#include "ip_sc.h"
+#include "GlobalVars.h"
 
 #if 0
 
@@ -51,14 +54,16 @@ FILE *fol_afopen(const CC_STRING& filename)
 
 FileWriter::~FileWriter() {}
 
-OsFileWriter::OsFileWriter(const char *filename)
+OsFileWriter::OsFileWriter(int mtype, const char *filename_)
 {
-	this->filename = filename;
+	id = mtype;
+	filename = filename_;
 }
 
-OsFileWriter::OsFileWriter(const CC_STRING& filename)
+OsFileWriter::OsFileWriter(int mtype, const CC_STRING& filename_)
 {
-	this->filename = filename;
+	id = mtype;
+	filename = filename_;
 }
 
 ssize_t OsFileWriter::Write(const void *buf, size_t count)
@@ -68,12 +73,17 @@ ssize_t OsFileWriter::Write(const void *buf, size_t count)
 	off_t offset;
 	int fd = -1;
 
+	struct timeval tv0;
+	gettimeofday(&tv0, NULL);
+
+	if(count == 0)
+		return 0;
+
 	fd = open(filename.c_str(), O_CREAT|O_BINARY|O_WRONLY|O_APPEND, 0664);
 	if(fd == -1) {
 		retval = -errno;
 		goto err_ret;
 	}
-
 	offset = lseek(fd, 0, SEEK_END);
 	flock.l_type   = F_WRLCK;
 	flock.l_whence = SEEK_SET;
@@ -92,6 +102,11 @@ ssize_t OsFileWriter::Write(const void *buf, size_t count)
 err_ret:
 	if(fd > 0)
 		close(fd);
+
+	ipsc_acc_bytes(gvar_sm, id, retval);
+	ipsc_acc_usecs(gvar_sm, id, calc_time_elapsed(&tv0));
+	ipsc_acc_writes(gvar_sm,id, 1);
+
 	return retval;
 }
 

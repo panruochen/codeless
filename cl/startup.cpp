@@ -15,6 +15,7 @@
 #include "GlobalVars.h"
 #include "utils.h"
 #include "misc.h"
+#include "defconfig.h"
 
 static void __NO_USE__ show_usage_and_exit(int exit_code);
 
@@ -158,8 +159,8 @@ static void get_host_cc_predefined_macros(const CC_STRING& host_cc, MemFile& pre
 		predef_macros << buf;
 		if(strstr(buf, "#define __arm__"))
 			as_lc_char = '@';
-		else if(strstr(buf, "#define __x86"))
-			as_lc_char = ';';
+		else if(strstr(buf, "#define __x86") || strstr(buf, "#define i386"))
+			as_lc_char = '#';
 	}
 	if(fp != NULL)
 		pclose(fp);
@@ -172,14 +173,16 @@ static bool create_file_writers(ParserContext *ctx)
 	for(i = 0; i < MSGT_MAX; i++) {
 		if(ctx->of_array[i].isnull())
 			continue;
-		if(ctx->server_addr.isnull())
-			gvar_file_writers[i] = new OsFileWriter(ctx->of_array[i]);
+		if(ctx->server_addr.isnull() || getenv("CL_FORCE_LOCAL_WRITE") )
+			gvar_file_writers[i] = new OsFileWriter(i, ctx->of_array[i]);
 		else {
 			DsFileWriter *fw = new DsFileWriter(i);
-			if( fw->Connect(ctx->server_addr.c_str()) < 0 ) {
+			if( fw->Connect(ctx->runtime_dir.isnull() ? DEF_RT_DIR : ctx->runtime_dir.c_str(), ctx->server_addr.c_str()) < 0 ) {
+				const int t = i;
 				for(i = 0; i < MSGT_MAX; i++)
 					if(gvar_file_writers[i])
 						delete gvar_file_writers[i];
+				fprintf(stderr, "Cannot create socket for %u\n", t);
 				return false;
 			}
 			gvar_file_writers[i] = fw;
@@ -193,6 +196,7 @@ int main(int argc, char *argv[])
 	ParsedState tcc_context, *pstate = &tcc_context;
 	size_t i;
 	ParserContext yctx;
+	char as_lc_char = 0;
 
 	my_dir = fol_dirname(argv[0]);
 
@@ -204,6 +208,8 @@ int main(int argc, char *argv[])
 
 	if( ! create_file_writers(&yctx) )
 		fatal(EPERM, "Can not create file writers\n");
+
+	gvar_sm = ipsc_open("/var/tmp/SM0");
 
 	if(!yctx.of_array[MSGT_CL].isnull())
 		save_command_line(yctx.of_array[MSGT_CL].c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
@@ -221,7 +227,7 @@ int main(int argc, char *argv[])
 		setenv("YZ_CC_PATH", yctx.cc_path.c_str(), 1);
 		unsetenv("LANG");
 		unsetenv("LANGUAGE");
-		get_host_cc_predefined_macros(yctx.cc, yctx.predef_macros, yctx.cc_args, yctx.as_lc_char);
+		get_host_cc_predefined_macros(yctx.cc, yctx.predef_macros, yctx.cc_args, as_lc_char); /* FIXME, should get as_lc_char in cleaner mode, too */
 		get_host_cc_search_dirs(yctx.cc, yctx.compiler_dirs, yctx.cc_args);
 	}
 
@@ -249,11 +255,13 @@ int main(int argc, char *argv[])
 
 		file.SetFileName(current_file);
 
+		if(check_source_type(current_file) == SOURCE_TYPE_S)
+			yctx.as_lc_char = as_lc_char;
+
 		if( ! yc.DoFile(pstate, (size_t)-1, &file, &yctx))
 			fatal(120, "%s", yc.errmsg.c_str());
 		break;
 	}
-
 //	show_search_dirs(yctx); exit(2);
 	return 0;
 }

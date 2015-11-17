@@ -9,3 +9,9 @@ uint8_t      gv_preprocess_mode = true;
 bool         rtm_expand_macros; //= true;
 
 FileWriter  *gvar_file_writers[MSGT_MAX];
+
+InterProcessSharedCounter   *gvar_sm;
+uint64_t gvar_write_time, gvar_write_length;
+uint32_t gvar_write_count;
+
+WriteStat gvar_maxw;
