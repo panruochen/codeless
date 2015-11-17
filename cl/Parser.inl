@@ -137,7 +137,7 @@ inline void Parser::IncludedFile::CListEntry::AddTail(CListEntry *entry)
 
 inline void Parser::mark_comment_start()
 {
-	comment_start = raw_line.size() - 2;
+	pline.comment_start = pline.from.size() - 2;
 }
 
 inline Parser::Parser()

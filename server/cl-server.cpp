@@ -14,13 +14,19 @@
 #include <pthread.h>
 #include <signal.h>
 #include <list>
+#include <set>
 #include "msgfmt.h"
+#include "defconfig.h"
+#include "ip_sc.h"
 
 #if 0
-#define ALOG(fmt,args...)  printf("[S] " fmt,##args)
+#include <sys/time.h>
+#define ALOG(fmt,args...)  do { struct timeval tv; gettimeofday(&tv,NULL); printf("[%08lu.%06lu] [S] " fmt, tv.tv_sec, tv.tv_usec, ##args); } while(0)
 #else
 #define ALOG(fmt,args...)  do{;}while(0)
 #endif
+
+InterProcessSharedCounter *sm;
 
 class Server;
 class Session {
@@ -31,15 +37,20 @@ class Session {
 	int sys_errno;
 	bool closed;
 
+	inline bool MsgReady();
 	void TryAlloc(unsigned int nb);
 	void SanityCheck();
 public:
+	enum {
+		S_ERR = -1,
+		S_MOK,
+		S_MORE,
+	};
 	Session();
 	~Session();
-	ssize_t RecvMsg();
+	int RecvMsg();
 	inline void Start(int fd);
 	inline void ClearMsg();
-	inline bool MsgReady();
 	inline bool IsClosed();
 	inline int MsgType();
 	inline DsMsg *GetMsg();
@@ -119,17 +130,29 @@ uint32_t Session::MsgPayloadLen()
 	return len ? len - sizeof(DsMsg) : 0;
 }
 
-#define READ2(ret,fd,buf,n)  do { ret = read(fd,buf,n); closed = (ret == 0); if(ret <= 0) goto recv_failure; } while(0)
+#define READ_CHECKED(ret,fd,buf,n)  do { \
+	ret = read(fd,buf,n);      \
+	if(ret < 0) {              \
+		if(errno == EAGAIN)    \
+			goto no_more_data; \
+		else                   \
+			goto recv_failure; \
+	} else if(ret == 0) {      \
+		closed = true;         \
+		goto no_more_data;     \
+	}                          \
+} while(0)
 
-ssize_t Session::RecvMsg()
+int Session::RecvMsg()
 {
-	ssize_t ret = 0;
 	DsMsg *msghdr;
+	ssize_t ret;
+	int retval = S_MORE;
 
 	if( MsgLen() == 0 ) {
 		assert(rxlen <= sizeof(msghdr->len));
 		TryAlloc(128);
-		READ2(ret, fd, ((char*)msg) + rxlen, sizeof(DsMsg) - rxlen);
+		READ_CHECKED(ret, fd, ((char*)msg) + rxlen, sizeof(DsMsg) - rxlen);
 		rxlen += ret;
 		if(rxlen >= sizeof(msghdr->len)) {
 			if(MsgLen() <= sizeof(DsMsg)) {
@@ -137,26 +160,31 @@ ssize_t Session::RecvMsg()
 				exit(250);
 			}
 		} else
-			return ret;
-	}
+			goto no_more_data;
 
-	SanityCheck();
+	}
 
 	TryAlloc(MsgLen());
 	msghdr = (DsMsg *) msg;
-	READ2(ret, fd, (char*)msg + rxlen, MsgLen()-rxlen);
+	READ_CHECKED(ret, fd, (char*)msg + rxlen, MsgLen()-rxlen);
 	rxlen += ret;
 	if(rxlen >= sizeof(DsMsg)) {
 		msghdr = (DsMsg *) msg;
 		if(cli_id == 0)
 			cli_id = msghdr->pid;
+
 	}
+
+no_more_data:
 	SanityCheck();
-	return ret;
+	if(MsgReady())
+		retval = S_MOK;
+	return retval;
 
 recv_failure:
 	sys_errno = errno;
-	return -1;
+	ALOG("%s:%u: pid=%06u, fd=%d, errno=%d, ret=%zi, read_size=%zi, rxlen=%u\n", __func__, __LINE__, cli_id, fd, sys_errno, ret, read_size, rxlen);
+	return S_ERR;
 }
 
 void Session::SanityCheck()
@@ -233,6 +261,14 @@ void Semaphore::Post()
 //  A File Server Class
 //---------------------------------------------------------------------------//
 class FileAgent {
+
+	struct lt
+	{
+		bool operator()(const Md5Sum& s1, const Md5Sum& s2) const
+		{ return memcmp(s1.data, s2.data, sizeof(s1.data)) < 0; }
+	};
+	typedef std::set<Md5Sum,lt> Md5Set;
+
 	bool alive;
 	pthread_t thread;
 	Semaphore sema;
@@ -240,6 +276,7 @@ class FileAgent {
 	void *MainThread();
 	static void *MainThread(void *obj);
 	std::list<DsMsg *> mq;
+	Md5Set *md5_set;
 	int msg_type;
 	FILE *fp;
 public:
@@ -247,17 +284,15 @@ public:
 	FileAgent(const char *rt_dir, const char *filename, int mtype);
 	~FileAgent();
 	char *filename;
-	uint64_t total_rx, total_wr;
-	uint32_t wr_cnt;
+	uint32_t msg_wr, msg_rx;
 };
 
 FileAgent::FileAgent(const char *rt_dir, const char *filename_, int mtype_)
 {
 	int ret;
 
-	total_rx = 0;
-	total_wr = 0;
-	wr_cnt = 0;
+	msg_rx = 0;
+	msg_wr = 0;
 
 	pthread_mutex_init(&mq_lock, NULL);
 	msg_type = mtype_;
@@ -271,6 +306,13 @@ FileAgent::FileAgent(const char *rt_dir, const char *filename_, int mtype_)
 	fp = fopen(filename, "wb+");
 	if(fp == NULL)
 		throw errno;
+
+#if HAVE_MD5
+	if(mtype_ == MSGT_CV)
+		md5_set = new Md5Set;
+	else
+#endif
+		md5_set = NULL;
 
 	ret = pthread_create(&thread, NULL, MainThread, this);
 	if(ret)
@@ -302,20 +344,32 @@ void * FileAgent::MainThread()
 			mq.pop_front();
 			pthread_mutex_unlock(&mq_lock);
 
-			wr_cnt++;
-			total_wr += fwrite(msg->data, 1, msg->len - sizeof(DsMsg), fp);
+			msg_wr++;
+			fwrite(msg->data, 1, msg->len - sizeof(DsMsg), fp);
 			free((void*)msg);
 		}
 	}
 	fclose(fp);
+	printf("[%u] %u MSGs received, %u MSGs written out; %u sent from clients\n", msg_type, msg_rx, msg_wr, sm->records[msg_type].writes);
 	return NULL;
 }
 
-bool FileAgent::Post(DsMsg *new_msg)
+bool FileAgent::Post(DsMsg *msg)
 {
+	msg_rx++;
+
+	if(md5_set && (msg->flags & DMF_MD5) ) {
+		bool md5_exists = false;
+		if( md5_set->find(msg->md5_sum) != md5_set->end() )
+			md5_exists = true;
+		else
+			md5_set->insert(msg->md5_sum);
+		if(md5_exists)
+			return true;
+	}
+
 	pthread_mutex_lock(&mq_lock);
-	mq.push_back(new_msg);
-	total_rx += new_msg->len - sizeof(*new_msg);
+	mq.push_back(msg);
 	pthread_mutex_unlock(&mq_lock);
 
 	sema.Post();
@@ -326,7 +380,8 @@ bool FileAgent::Post(DsMsg *new_msg)
 //  A Message Server Class
 //---------------------------------------------------------------------------//
 class Server {
-	const char *of_array[MSGT_MAX],  *server_addr;
+	const char *of_array[MSGT_MAX];
+	char *server_addr;
 	const char *rt_dir;
 	FileAgent *agents[MSGT_MAX];
 	unsigned int max_clients;
@@ -351,13 +406,13 @@ public:
 
 bool Server::proc_exit = false;
 
-static int setnonblocking(int fd, int blocking)
+static bool setblocking(int fd, int blocking)
 {
 	int flags = fcntl(fd, F_GETFL, 0);
 	if (flags < 0)
-		return 0;
-	flags = blocking ? (flags&~O_NONBLOCK) : (flags|O_NONBLOCK);
-	return (fcntl(fd, F_SETFL, flags) == 0) ? 1 : 0;
+		return false;
+	flags = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
+	return (fcntl(fd, F_SETFL, flags) == 0) ? true : false;
 }
 
 /*
@@ -402,12 +457,10 @@ int Server::Accept()
 	struct sockaddr_un  saddr_un;
 	struct stat statbuf;
 
-	ALOG("%s:%u\n", __func__, __LINE__);
 	len = sizeof(saddr_un);
 	if ((clifd = accept(listenfd, (struct sockaddr *)&saddr_un, &len)) < 0)
 		goto errout;     /* often errno=EINTR, if signal caught */
 
-	ALOG("%s:%u\n", __func__, __LINE__);
 #ifndef __CYGWIN__
 /* FIXME: Right now we have no way to determine the
  *        bound socket name of the peer's socket.  For now
@@ -417,17 +470,16 @@ int Server::Accept()
 	len -= offsetof(struct sockaddr_un, sun_path); /* len of pathname */
 	saddr_un.sun_path[len] = 0;           /* null terminate */
 
-	ALOG("%s:%u\n", __func__, __LINE__);
 	if (stat(saddr_un.sun_path, &statbuf) < 0)
 		goto errout;
 
-	ALOG("%s:%u: %s: 0x%x\n", __func__, __LINE__, saddr_un.sun_path, statbuf.st_mode);
 	/* Not a socket */
 	if (S_ISSOCK(statbuf.st_mode) == 0)
 		goto errout;
 
 	uid = statbuf.st_uid;   /* return uid of caller */
 	unlink(saddr_un.sun_path);    /* we're done with pathname now */
+
 #endif
 	return(clifd);
 
@@ -481,11 +533,15 @@ bool Server::Run()
 
 		ret = poll(pollfds, nfds, -1);
 		if (ret == -1) {
-			if(errno == EINTR)
-				continue;
-			last_error = errno;
-			printf("Poll failed %d, \"%s\"\n", errno, strerror(errno));
-			return false;
+			switch(errno) {
+			/* Continue to receive data from sockets if there are any */
+			case EINTR:
+				break;
+			default:
+				last_error = errno;
+				printf("Poll failed %d, \"%s\"\n", errno, strerror(errno));
+				return false;
+			}
 		}
 
 		if (pollfds[0].revents == POLLIN) {
@@ -493,20 +549,23 @@ bool Server::Run()
 
 			clifd = Accept();
 			if (clifd < 0) {
-				perror("accept");
+				fprintf(stderr, "Cannot accept, errno=%d (%s)\n", errno, strerror(errno));
 				exit(EXIT_FAILURE);
 			}
 			if (nfds == max_clients)
 				Expand();
 			if (nfds == max_clients) {
-				ALOG("No space for new connection (%d)\n", clifd);
+				fprintf(stderr, "No space for new connection (%d)\n", clifd);
 				close(clifd);
 				continue;
 			}
 
 			assert(nfds >= 1);
 			ALOG("new connection (%d) set up\n", clifd);
-			setnonblocking(clifd, 1);
+			if( ! setblocking(clifd, 0) ) {
+				fprintf(stderr, "Cannot set fd %d to non-blocking mode\n", clifd);
+				exit(EXIT_FAILURE);
+			}
 			NewSession(clifd, POLLIN);
 		} else {
 			Session *sess;
@@ -515,15 +574,20 @@ bool Server::Run()
 				assert(pollfds[i].fd == sessions[i]->GetFD());
 				sess = sessions[i];
 				if( pollfds[i].revents & POLLIN ) {
-					ret = sess->RecvMsg();
-					if(sess->MsgReady()) {
-						const int mt = sess->MsgType();
-						FileAgent *const ag = agents[mt];
-						assert(mt >= 0 && mt < MSGT_MAX);
-						assert(ag);
-						ag->Post(sess->GetMsg());
-						sess->ClearMsg();
-					}
+					 do {
+						ret = sess->RecvMsg();
+						if(ret == Session::S_MOK) {
+							const int mt = sess->MsgType();
+							FileAgent *const ag = agents[mt];
+							assert(mt >= 0 && mt < MSGT_MAX);
+							assert(ag);
+							ag->Post(sess->GetMsg());
+							sess->ClearMsg();
+						} else if (ret == Session::S_ERR ) {
+							ALOG("errno=%d\n", ret);
+							exit(-EINVAL);
+						}
+					} while(ret != Session::S_MORE);
 				}
 				if( sess->IsClosed() || (pollfds[i].revents & POLLHUP) ) {
 					assert(nfds > 1);
@@ -535,6 +599,8 @@ bool Server::Run()
 				}
 			}
 		}
+
+
 	}
 
 	for(i = 0; i < MSGT_MAX; i++) {
@@ -552,7 +618,7 @@ Server::Server(unsigned int nc)
 	sessions = new Session *[nc];
 	pollfds  = new struct pollfd[nc];
 	max_clients = nc;
-	rt_dir = "/var/tmp";
+	rt_dir = strdup(DEF_RT_DIR);
 }
 
 void Server::Expand()
@@ -575,11 +641,8 @@ bool Server::ParseOptions(int argc, char *argv[])
 	static const struct option long_options[] = {
         {"server-addr",     1, 0, COP_SERVER_ADDR },
         {"save-cl",         1, 0, COP_SAVE_COMMAND_LINE },
-        {"yz-save-cl",      1, 0, COP_SAVE_COMMAND_LINE },
         {"save-dep",        1, 0, COP_SAVE_DEPENDENCY },
-        {"yz-save-dep",     1, 0, COP_SAVE_DEPENDENCY },
         {"save-condvals",   1, 0, COP_SAVE_CONDVALS },
-        {"yz-save-condvals",1, 0, COP_SAVE_CONDVALS },
         {"rt-dir",          1, 0, COP_RTDIR },
         {0, 0, 0, 0}
     };
@@ -608,12 +671,18 @@ bool Server::ParseOptions(int argc, char *argv[])
 			of_array[MSGT_CV] = strdup(optarg);
 			break;
         case COP_RTDIR:
-			rt_dir = strdup(optarg);
+			if(rt_dir)
+				free((void*)rt_dir);
+			rt_dir = strdup(getopt_default(optarg,DEF_RT_DIR));
 			break;
 		}
 	}
-	if(!server_addr)
-		server_addr = "/var/tmp/cl-server";
+	if(!server_addr) {
+		size_t n;
+		n = snprintf(NULL, 0, "%s/%s", rt_dir, DEF_SVR_ADDR);
+		server_addr = (char *)malloc(n + 4);
+		snprintf(server_addr, n+4, "%s/%s", rt_dir, DEF_SVR_ADDR);
+	}
 	return retval;
 }
 
@@ -627,11 +696,16 @@ int main(int argc, char *argv[])
 {
 	Server server(32);
 	int ret;
+//	InterProcessSharedCounter *sm;
 
 	signal(SIGUSR1, sighandler);
 
 	if(server.ParseOptions(argc,argv))
 		exit(1);
+
+	sm = ipsc_create("/var/tmp/SM0");
+	if(sm == NULL)
+		exit(ENOMEM);
 
 	ret = server.Listen();
 	if(!ret)
@@ -641,6 +715,8 @@ int main(int argc, char *argv[])
 	if(!ret)
 		goto do_exit;
 
+//	printf("%u (%uK) writes in %u.%03u seconds\n", sm->u32_array[0], (uint32_t)(sm->u64_array[1]/1024),
+//		(uint32_t)(sm->u64_array[0]/1000000ULL), (uint32_t)(sm->u64_array[0]%1000000ULL)/1000);
 	return 0;
 
 do_exit:

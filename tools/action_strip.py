@@ -71,7 +71,7 @@ def strip_file(options, file, c_blocks, fdump) :
                 fdw.write(line2)
     fdr.close()
     fdw.close()
-    shutil.move(file, file + '.hbak')
+    shutil.move(file, file + options.baksuffix)
     shutil.move(file + '.NEW', file)
 
 def proc_if(c_blocks, q) :
@@ -85,6 +85,7 @@ def proc_if(c_blocks, q) :
         if c.type == 'if' :
             break
     for c in tmplist :
+
         if c.type == 'elif' :
             first_elif = c
         if c.value == 1 :
@@ -121,6 +122,7 @@ def run(options, us_files, fdump, processed_files) :
     c_blocks = []
     hfile = None
     levels = dict()
+    last_nh = 1
 
     for line in fd :
         if len(line) == 0 :
@@ -133,6 +135,11 @@ def run(options, us_files, fdump, processed_files) :
             nh = int(fx[0])
             if nh not in levels :
                 levels[nh] = deque([])
+
+            if nh < last_nh :
+                q = levels[last_nh]
+                while len(q) > 0 :
+                    proc_if(c_blocks, q)
 
             q  = levels[nh]
             if fx[3].find(',') >= 0 :
@@ -157,7 +164,16 @@ def run(options, us_files, fdump, processed_files) :
                 q.append(c)
                 if t == 'else' :
                     proc_if(c_blocks, q)
+            last_nh = nh
         else :
+            if last_nh == 2 :
+                q = levels[2]
+                while len(q) > 0 :
+                    proc_if(c_blocks, q)
+            if 1 in levels :
+                q = levels[1]
+                while len(q) > 0 :
+                    proc_if(c_blocks, q)
             if (options.all or hfile in us_files) and len(c_blocks) > 0 :
                 strip_file(options, hfile, c_blocks, fdump)
                 processed_files.append(hfile)
@@ -166,6 +182,7 @@ def run(options, us_files, fdump, processed_files) :
             hfile = line
             del c_blocks[:]
             levels.clear()
+            last_nh = 1
 
     if (options.all or hfile in us_files) and len(c_blocks) > 0 :
         strip_file(options, hfile, c_blocks, fdump)
@@ -175,7 +192,8 @@ def run(options, us_files, fdump, processed_files) :
 def main(startidx) :
     oparser = optparse.OptionParser()
 
-    oparser.add_option("-f", "--condvals-file", action='store', help="Specify the conditional-values(CV) file", dest='cvfile', default=None)
+    oparser.add_option("-b", "--bak-suffix", action='store', help="The suffix name of backup files", dest='baksuffix', default='.bak')
+    oparser.add_option("-f", "--condvals-file", action='store', help="The conditional-values(CV) file name", dest='cvfile', default=None)
     oparser.add_option("-d", "", action='store', help="Specify the file to dump", dest='dumpfile', default=None)
     oparser.add_option("-i", "--yz-ignore", action='append', help="Specify the file to be ignored", dest='ignlist', default=[])
     oparser.add_option("-a", "--all", action='store_true', help="Strip all files listed in the CV file", dest='all')

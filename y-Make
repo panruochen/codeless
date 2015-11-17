@@ -11,11 +11,11 @@ import cu_lib
 
 YZ_CC        = []
 YZ_PARSER    = None
-YZ_JOB_SVR   = None
-YZ_SVR_ADDR  = '/var/tmp/cl-server'
+YZ_CL_SERVER = None
+YZ_SVR_ADDR  = None
 YZ_DEP_FILE  = None
 YZ_CL_FILE   = None
-YZ_SHELL     = None
+YZ_SHELL     = "bash"
 YZ_IGNORE    = []
 YZ_CV_FILE   = None
 YZ_PP_SUITE  = None
@@ -23,8 +23,10 @@ YZ_SYSBIN    = {}
 YZ_TOPDIR    = None
 YZ_PJ_FILE   = None
 YZ_SHOW_PERF = False
+YZ_RT_DIR    = None
+YZ_BAK_SUFFIX = '.bak'
 
-def to_abs_path(x) :
+def get_ap(x) :
     return os.path.realpath(x)
 
 def get_topdir(make_args) :
@@ -84,8 +86,8 @@ get_sys_bin('bash')
 get_sys_bin('make')
 
 short_options = ''
-long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', 'yz-save-cl=', 'yz-save-proj=', 'yz-show-perf',
-    'yz-shell=', 'yz-ignore=', "yz-save-condvals=", "yz-postprocess=", "yz-start-server=", "yz-server-addr="])
+long_options = (["yz-cc=", "yz-xcc=", 'yz-save-dep=', 'yz-save-cl=', 'yz-save-proj=', 'yz-show-perf', 'yz-runtime-dir=',
+    'yz-shell=', 'yz-ignore=', "yz-save-condvals=", "yz-postprocess=", "yz-server-program=", "yz-server-addr=",])
 
 a, make_args = cu_lib.collect_options(short_options, long_options, sys.argv[1:])
 
@@ -100,39 +102,53 @@ for o, a in opts:
     if o == 'cc':
         YZ_CC.append(a)
     elif o == 'xcc':
-        YZ_PARSER = to_abs_path(a)
+        YZ_PARSER = get_ap(a)
     elif o.find('save-dep') == 0 :
-        YZ_DEP_FILE = to_abs_path(a)
+        YZ_DEP_FILE = get_ap(a)
     elif o == 'save-cl' :
-        YZ_CL_FILE = to_abs_path(a)
+        YZ_CL_FILE = get_ap(a)
     elif o == 'shell' :
         YZ_SHELL = a
     elif o == 'ignore' :
         YZ_IGNORE.append('--yz-ignore=' + a)
     elif o == 'save-condvals':
-        YZ_CV_FILE = to_abs_path(a)
+        YZ_CV_FILE = get_ap(a)
     elif o == 'postprocess':
-        YZ_PP_SUITE = to_abs_path(a)
+        YZ_PP_SUITE = get_ap(a)
     elif o == 'save-proj':
         YZ_PJ_FILE = a
-    elif o == 'start-server':
-        if len(a) == 0 or a[0] == ' ' or a[0] == '\t' :
-            YZ_JOB_SVR = to_abs_path(os.path.dirname(sys.argv[0]) + "/cl-server.exe")
-        else :
-            YZ_JOB_SVR = to_abs_path(a)
+    elif o == 'server-program':
+        if len(a) > 0 :
+            YZ_CL_SERVER = get_ap(a)
     elif o == 'server-addr':
-        YZ_SVR_ADDR = to_abs_path(a)
+        if len(a) == 0 :
+            exit(1)
+        YZ_SVR_ADDR = a
     elif o == 'show-perf':
         YZ_SHOW_PERF = True
+    elif o == 'runtime-dir':
+        YZ_RT_DIR = get_ap(a)
 
 if YZ_PARSER is None:
-    YZ_PARSER = to_abs_path(os.path.dirname(sys.argv[0]) + "/cl.exe")
+    YZ_PARSER = get_ap(os.path.dirname(sys.argv[0]) + "/cl.exe")
 
 priv_args = []
-jsvr_args = []
+csvr_args = []
 
-if YZ_JOB_SVR is not None :
-    jsvr_args += [YZ_JOB_SVR, '--server-addr=' + YZ_SVR_ADDR]
+if YZ_SVR_ADDR is not None :
+    if YZ_CL_SERVER is None :
+        YZ_CL_SERVER = get_ap(os.path.dirname(sys.argv[0]) + "/cl-server.exe")
+    if YZ_SVR_ADDR[0] != '/' :
+        if YZ_RT_DIR is not None :
+            YZ_SVR_ADDR = get_ap(YZ_RT_DIR + '/' + YZ_SVR_ADDR)
+        else :
+            YZ_SVR_ADDR = get_ap(YZ_SVR_ADDR)
+
+if YZ_CL_SERVER is not None :
+    if YZ_SVR_ADDR is None :
+        print >>sys.stderr, "must specify --yz-server-addr"
+        exit(1)
+    csvr_args += [YZ_CL_SERVER, '--server-addr=' + YZ_SVR_ADDR]
     priv_args.append('--yz-server-addr=' + YZ_SVR_ADDR)
 
 if YZ_PP_SUITE :
@@ -147,39 +163,41 @@ if YZ_PP_SUITE :
     YZ_CV_FILE  = YZ_PP_SUITE + '/condvals.txt'
     YZ_PJ_FILE  = YZ_PP_SUITE + '/projlist.txt'
 else :
-    priv_args.append('--yz-in-place=.bak')
+    priv_args.append('--yz-in-place=' + YZ_BAK_SUFFIX)
 
 if YZ_DEP_FILE is not None :
-    y = '--yz-save-dep=' + YZ_DEP_FILE
-    priv_args.append(y)
-    if YZ_JOB_SVR is None :
+    priv_args.append('--yz-save-dep=' + YZ_DEP_FILE)
+    if YZ_CL_SERVER is None :
         open(YZ_DEP_FILE, "w").close()
     else :
-        jsvr_args.append(y)
+        csvr_args.append('--save-dep=' + YZ_DEP_FILE)
 
 if YZ_CL_FILE is not None :
-    y = '--yz-save-cl=' + YZ_CL_FILE
-    priv_args.append(y)
-    if YZ_JOB_SVR is None :
+    priv_args.append('--yz-save-cl=' + YZ_CL_FILE)
+    if YZ_CL_SERVER is None :
         open(YZ_CL_FILE, "w").close()
     else :
-        jsvr_args.append(y)
+        csvr_args.append('--save-cl=' + YZ_CL_FILE)
 
 if YZ_CV_FILE :
-    y = '--yz-save-condvals=' + YZ_CV_FILE
-    priv_args.append(y)
-    if YZ_JOB_SVR is None :
+    priv_args.append('--yz-save-condvals=' + YZ_CV_FILE)
+    if YZ_CL_SERVER is None :
         open(YZ_CV_FILE,"w").close()
     else :
-        jsvr_args.append(y)
+        csvr_args.append('--save-condvals=' + YZ_CV_FILE)
+
+if YZ_RT_DIR is not None :
+    if not os.path.exists(YZ_RT_DIR) :
+        os.mkdir(YZ_RT_DIR)
+    priv_args.append('--yz-rt-dir=' + YZ_RT_DIR)
+    csvr_args.append('--rt-dir=' + YZ_RT_DIR)
 
 if len(YZ_IGNORE) :
     priv_args += YZ_IGNORE
 
-
 YZ_TOPDIR = get_topdir(make_args)
 if YZ_CV_FILE or YZ_DEP_FILE :
-    priv_args.append('--yz-topdir=' + YZ_TOPDIR)
+    priv_args.append('--yz-top-dir=' + YZ_TOPDIR)
 
 final_commands =  generate_cc_scripts()
 final_commands += YZ_SYSBIN['make']
@@ -191,29 +209,39 @@ final_commands += '\n'
 print final_commands
 #exit(2)
 
-if YZ_JOB_SVR is not None :
-    print "Start sever: %s" % ' '.join(jsvr_args)
-    sp_svr = subprocess.Popen(jsvr_args)
+sp_svr  = None
+sp_make = None
+
+def sigint_handler(sig, frame) :
+    if sp_make is not None :
+        sp_make.kill()
+        sp_make.wait()
+    if sp_svr is not None :
+        os.kill(sp_svr.pid, signal.SIGUSR1)
+        sp_svr.wait()
+    sys.exit(1)
+signal.signal(signal.SIGINT, sigint_handler)
+
+if YZ_CL_SERVER is not None :
+    print "Start sever: %s" % ' '.join(csvr_args)
+    sp_svr = subprocess.Popen(csvr_args)
     if sp_svr is None :
         print >>sys.stderr, "Can not start server"
         exit(2)
 
 begin_tm  = time.time()
-subprocess.check_call(final_commands, shell=True, executable=YZ_SYSBIN['bash'])
+sp_make = subprocess.Popen(final_commands, shell=True, executable=YZ_SYSBIN['bash'])
+sp_make.wait()
+if sp_make.returncode :
+    exit(sp_make.returncode)
 finish_tm = time.time()
 
-if YZ_JOB_SVR is not None :
+if YZ_CL_SERVER is not None :
     os.kill(sp_svr.pid, signal.SIGUSR1)
     sp_svr.wait()
     if sp_svr.returncode :
         print >>sys.stderr, "yMake got error %d" % sp_svr.returncode
         exit(sp_svr.returncode)
-
-#sp_make = subprocess.Popen(final_commands, shell=True, executable=YZ_SYSBIN['bash'])
-#sp_make.wait()
-#if sp_make.returncode :
-#    print >>sys.stderr, "yMake got error %d" % sp_make.returncode
-#    exit(sp_make.returncode)
 
 if YZ_PP_SUITE :
     print "Post processing ..."
@@ -221,7 +249,7 @@ if YZ_PP_SUITE :
     cl = "%s/tools/cl-tool cparse -o %s/tmp.pp %s" % (dir, YZ_PP_SUITE, YZ_CV_FILE)
     subprocess.check_call(cl, shell=True)
 
-    cl = "%s/tools/cl-tool strip %s -f %s/tmp.pp --all" % (dir, ' '.join(YZ_IGNORE), YZ_PP_SUITE)
+    cl = "%s/tools/cl-tool strip %s -f %s/tmp.pp --bak-suffix=%s --all" % (dir, ' '.join(YZ_IGNORE), YZ_PP_SUITE, YZ_BAK_SUFFIX)
     sp_make = subprocess.check_call(cl, shell=True)
 
 if YZ_PJ_FILE :

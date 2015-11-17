@@ -713,10 +713,10 @@ CC_STRING Parser::do_elif(int mode)
 	CC_STRING trailing;
 	const char *p;
 
-	if( comment_start > 0 )
-		trailing = raw_line.c_str() + comment_start ;
+	if( pline.comment_start > 0 )
+		trailing = pline.from.c_str() + pline.comment_start ;
 	else {
-		p = raw_line.c_str();
+		p = pline.from.c_str();
 		while( *p != '\r' && *p != '\n' && *p != '\0') p++;
 		trailing = p;
 	}
@@ -724,7 +724,7 @@ CC_STRING Parser::do_elif(int mode)
 	if(mode == 2)
 		output = "#else";
 	else if(mode == 1){
-		p = raw_line.c_str();
+		p = pline.from.c_str();
 		skip_blanks(p);
 		p ++; /* # */
 		skip_blanks(p);
@@ -750,14 +750,22 @@ void Parser::AddDependency(const char *prefix, const CC_STRING& filename)
 
 void Parser::SaveCondValInfo(const CC_STRING& s)
 {
-	if(writers[MSGT_CV])
-		writers[MSGT_CV]->Write(s.c_str(), s.size());
+	if(writers[MSGT_CV] && !s.isnull()) {
+		ssize_t ret;
+		ret = writers[MSGT_CV]->Write(s.c_str(), s.size());
+		if(ret < 0)
+			exit(-EPIPE);
+	}
 }
 
 void Parser::SaveDepInfo(const CC_STRING& s)
 {
-	if(writers[MSGT_DEP])
-		writers[MSGT_DEP]->Write(s.c_str(), s.size());
+	if(writers[MSGT_DEP] && !s.isnull()) {
+		ssize_t ret;
+		ret = writers[MSGT_DEP]->Write(s.c_str(), s.size());
+		if(ret < 0)
+			exit(-EPIPE);
+	}
 }
 
 static CC_STRING MakeSemaName(const CC_STRING& filename)
@@ -814,18 +822,17 @@ File *Parser::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf,
 	itoken = GetIncludeFileName(iline, quoted);
 	iline.clear();
 	if( itoken.isnull() ) {
-		excep.format("Invalid include preprocessor: %s", raw_line.c_str());
+		excep.format("Invalid include preprocessor: %s", pline.from.c_str());
 		goto done;
 	}
-	ifpath = rtc->get_include_file_path(itoken, GetCurrentFileName(),
-		quoted, preprocessor == SSID_SHARP_INCLUDE_NEXT, &in_compiler_dir);
-	if(ifpath.isnull()) {
+
+	if(!rtc->get_include_file_path(itoken, GetCurrentFileName(), quoted, preprocessor == SSID_SHARP_INCLUDE_NEXT, ifpath, &in_compiler_dir)) {
 		excep.format("Cannot find include file \"%s\"", itoken.c_str());
 		goto done;
 	}
 
 	RealFile *file;
-	new_line = raw_line;
+	pline.to = pline.from;
 	file = new RealFile;
 	file->SetFileName(ifpath);
 	retval = file;
@@ -854,7 +861,7 @@ bool Parser::do_include(sym_t preprocessor, const char *line, const char **outpu
 		return false;
 	}
 
-	*output = new_line.c_str();
+	*output = pline.to.c_str();
 	return true;
 }
 
@@ -863,18 +870,30 @@ bool Parser::SM_Run()
 	FILE *out_fp = included_files.top()->ofile;
 	const char *pos;
 	TRI_STATE result = TSV_0;
-	const char *output = raw_line.c_str();
+	const char *output = pline.from.c_str();
 	sym_t preprocessor;
 	CC_STRING expanded_line;
 
-	pos = line.c_str();
-	preprocessor = GetPreprocessor(pos, &pos);
+	do {
+		pos = pline.parsed.c_str();
+		preprocessor = GetPreprocessor(pos, &pos);
+		if(preprocessor != pline.pp_id || (pline.content != -1 && pline.content + pline.parsed.c_str() != pos) ) {
+			fprintf(stderr, "%s:%zu\n", dv_current_file, dv_current_line);
+			fprintf(stderr, "  (%d) %s\n", pline.content, pline.parsed.c_str());
+			fprintf(stderr, "  %d vs %d\n", preprocessor, pline.pp_id);
+			exit(1);
+		}
+	} while(0);
+
+	pos = pline.parsed.c_str() + pline.content;
 
 	dv_current_file = GetCurrentFileName().c_str();
 	dv_current_line = GetCurrentLineNumber();
 
-//	GDB_TRAP2(strstr(dv_current_file,"parser/gpsconst.h"), (dv_current_line==50));
-	switch(preprocessor) {
+//	GDB_TRAP2(strstr(dv_current_file,"kernel/entry_64.S"), (dv_current_line==73));
+//	GDB_TRAP2(strstr(dv_current_file,"tef6686/public.h"), (dv_current_line==46));
+//	GDB_TRAP2(strstr(dv_current_file,"/usr/include/features.h"), dv_current_line==131);
+	switch(pline.pp_id) {
 	case SSID_SHARP_IF:
 		if( superior_conditional_value(true) != TSV_0 )
 			result = (TRI_STATE) expression_evaluate(pstate, pos, &excep);
@@ -932,14 +951,14 @@ handle_if_branch:
 		 */
 		if( eval_current_conditional() == TSV_0 ) {
 			if(result == TSV_X) {
-				new_line = do_elif(1);
-				output = new_line.c_str();
+				pline.to = do_elif(1);
+				output = pline.to.c_str();
 			} else
 				output = NULL;
 		} else {
 			if(result == TSV_1) {
-				new_line = do_elif(2);
-				output = new_line.c_str();
+				pline.to = do_elif(2);
+				output = pline.to.c_str();
 			} else if(result == TSV_0)
 				output = NULL;
 		}
@@ -977,7 +996,7 @@ handle_if_branch:
 		if(eval_current_conditional() == TSV_X)
 			goto print_and_exit;
 
-		switch(preprocessor) {
+		switch(pline.pp_id) {
 		  case SSID_SHARP_DEFINE:
 			do_define(pos);
 			break;
@@ -987,11 +1006,11 @@ handle_if_branch:
 		  case SSID_SHARP_INCLUDE:
 		  case SSID_SHARP_INCLUDE_NEXT:
 			if( gv_preprocess_mode )
-				do_include(preprocessor, pos, &output);
+				do_include(pline.pp_id, pos, &output);
 			break;
 		  default:
 			if(rtm_expand_macros) {
-				pos = line.c_str();
+				pos = pline.parsed.c_str();
 				expanded_line = ExpandLine(pstate, false, pos, &excep);
 				if(excep.GetError() != NULL)
 					return false;
@@ -1006,7 +1025,7 @@ print_and_exit:
 		fprintf(out_fp, "%s", output);
 done:
 
-	comment_start = -1;
+	pline.comment_start = -1;
 	if(gv_preprocess_mode && excep.GetError()) {
 		IncludedFile *tmp;
 		CC_STRING pmsg, ts;
@@ -1030,10 +1049,10 @@ void Parser::Reset(ParsedState *pstate, size_t num_preprocessors, ParserContext 
 
 	assert(included_files.size() == 0);
 
-	raw_line.clear();
-	line.clear();
+	pline.from.clear();
+	pline.parsed.clear();
+	pline.comment_start = -1;
 	deptext.clear();
-	comment_start = -1;
 	excep = "";
 	errmsg.clear();
 }
@@ -1083,8 +1102,27 @@ sym_t Parser::GetPreprocessor(const char *line, const char **pos)
 //
 int Parser::ReadLine()
 {
+#define RETRY() do { \
+	state = STAT_0;  \
+	goto retry;      \
+} while(0)
+	CC_STRING& line = pline.parsed;
+
+	pline.from.clear();
+	pline.parsed.clear();
+	pline.to.clear();
+	pline.pp_id = SSID_INVALID;
+	pline.content = -1;
+
 	enum {
-		STAT_INIT,
+		STAT_INIT = 0,
+
+		STAT_SPACE1,
+		STAT_SHARP,
+		STAT_SPACE2,
+		STAT_WORD,
+
+		STAT_0,
 		STAT_SLASH,
 		STAT_LC,
 		STAT_BC,
@@ -1099,29 +1137,41 @@ int Parser::ReadLine()
 	int c;
 	int foldcnt = 0;
 	File *file = GetCurrentFile().ifile;
+	CC_STRING directive;
+	bool eof = false;
 
 	state = STAT_INIT;
-	while(1) {
+	while(!eof) {
 		c = file->ReadChar();
 		if(c == EOF) {
 			if(line.isnull())
 				return 0;
 			c = '\n';
-			if(state != STAT_INIT) {
-				excep = "Syntax error found";
-				return -1;
-			}
-			goto handle_last_line;
-		}
-
-		raw_line += c;
+			eof = true;
+		} else
+			pline.from += c;
 		if( c == '\r' ) /* Ignore carriage characters */
 			continue;
 		if(c == '\n')
 			file->line++;
 
+retry:
 		switch(state) {
 		case STAT_INIT:
+			switch(c) {
+			case ' ':
+			case '\t':
+				state = STAT_SPACE1;
+				line = c;
+				continue;
+			case '#':
+				state = STAT_SHARP;
+				line = c;
+				continue;
+			}
+			state = STAT_0;
+
+		case STAT_0:
 			switch(c) {
 			case '/':
 				state = STAT_SLASH;
@@ -1136,7 +1186,7 @@ int Parser::ReadLine()
 				state = STAT_SQ;
 				break;
 			default:
-				if(rtc && c == rtc->as_lc_char)
+				if(rtc && c == rtc->as_lc_char && pline.pp_id == SSID_INVALID)
 					state = STAT_LC;
 				break;
 			}
@@ -1161,13 +1211,13 @@ int Parser::ReadLine()
 				state = STAT_SQ;
 				break;
 			default:
-				state = STAT_INIT;
+				state = STAT_0;
 			}
 			break;
 
 		case STAT_LC: /* line comment */
 			if(c == '\n')
-				state = STAT_INIT;
+				state = STAT_0;
 			break;
 
 		case STAT_BC: /* block comments */
@@ -1179,7 +1229,7 @@ int Parser::ReadLine()
 
 		case STAT_ASTERISK: /* asterisk */
 			if(c == '/') {
-				state = STAT_INIT;
+				state = STAT_0;
 				continue;
 			}
 			else if(c != '*')
@@ -1192,7 +1242,7 @@ int Parser::ReadLine()
 			else {
 				if(c == '\n')
 					foldcnt++;
-				state = STAT_INIT;
+				state = STAT_0;
 				continue;
 			}
 			break;
@@ -1203,7 +1253,7 @@ int Parser::ReadLine()
 				state = STAT_DQ_ESC;
 				break;
 			case '"':
-				state = STAT_INIT;
+				state = STAT_0;
 				break;
 			}
 			break;
@@ -1214,7 +1264,7 @@ int Parser::ReadLine()
 				state = STAT_SQ_ESC;
 				break;
 			case '\'':
-				state = STAT_INIT;
+				state = STAT_0;
 				break;
 			}
 			break;
@@ -1226,16 +1276,58 @@ int Parser::ReadLine()
 		case STAT_SQ_ESC:
 			state = STAT_SQ;
 			break;
+
+		case STAT_SPACE1:
+			switch(c) {
+			case '#':
+				state = STAT_SHARP; break;
+			case ' ':
+			case '\t':
+				break;
+			default:
+				RETRY();
+			}
+			break;
+
+		case STAT_SHARP:
+			if(isblank(c)) {
+				state = STAT_SPACE2;
+				break;
+			}
+		/* fall through */
+		case STAT_SPACE2:
+			if(isalpha(c) || isdigit(c) || c == '_') {
+				state = STAT_WORD;
+				directive = '#';
+				directive += c;
+			} else if(!isblank(c))
+				RETRY();
+			break;
+
+		case STAT_WORD:
+			if(isalpha(c) || isdigit(c) || c == '_')
+				directive += c;
+			else {
+				for(size_t i = 0; i < num_preprocessors; i++)
+					if(preprocessors[i] == directive) {
+						pline.pp_id = pstate->syLut.Put(preprocessors[i]);
+						pline.content = line.size();
+						break;
+					}
+				RETRY();
+			}
+			break;
+
 		}
 
 		if(state != STAT_LC && state != STAT_BC && state != STAT_FOLD && state != STAT_ASTERISK)
 			line += c;
-
-		if(state == STAT_INIT) {
-handle_last_line:
-			if(c == '\n')
-				break;
-		}
+		if ((state == STAT_INIT || state == STAT_0) && c == '\n')
+			break;
+	}
+	if(state != STAT_INIT && state != STAT_0) {
+		excep = "Syntax error";
+		return -1;
 	}
 	file->offset = -foldcnt;
 	return 1;
@@ -1249,8 +1341,7 @@ bool Parser::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np
 	CC_STRING path;
 	bool in_compiler_dir;
 	for(size_t i = 0; i < ifiles.size(); i++) {
-		path = rtc->get_include_file_path(ifiles[i], CC_STRING(""), true, false, &in_compiler_dir);
-		if( path.isnull() ) {
+		if(!rtc->get_include_file_path(ifiles[i], CC_STRING(""), true, false, path, &in_compiler_dir)) {
 			excep.format("Can not find include file \"%s\"", ifiles[i].c_str());
 			return false;
 		}
@@ -1296,9 +1387,7 @@ bool Parser::RunEngine(size_t cond)
 			num_preprocessors = ifile->np;
 		} else
 			return false;
-		raw_line.clear();
-		line.clear();
-		new_line.clear();
+
 	}
 	return true;
 }
@@ -1397,7 +1486,7 @@ bool Parser::DoFile(ParsedState *pstate, size_t num_preprocessors, File *infile,
 error:
 	if(!retval) {
 		if(included_files.size() > 0)
-			errmsg.format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), raw_line.c_str(), excep.GetError());
+			errmsg.format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), pline.from.c_str(), excep.GetError());
 		else
 			errmsg = excep.GetError();
 		IncludedFile *ilevel;

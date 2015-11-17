@@ -56,9 +56,7 @@ function step1()
 function step2()
 {
 	make clean
-#	../../y-Make --yz-cc=gcc --yz-save-cl=gMake-commands.txt --yz-shell=bash --yz-save-dep=gMake-depends.txt --yz-save-condvals=gMake-condvals.txt ##--yz-postprocess
-	../../y-Make --yz-cc=gcc --yz-shell=bash --yz-start-server="" --yz-server-addr=/var/tmp/cl-server --yz-postprocess=$HOME/@cl-Make
-#	../../y-Make --yz-cc=gcc --yz-shell=bash --yz-postprocess=$HOME/@cl-Make
+	../../y-Make --yz-cc=gcc --yz-shell=bash --yz-server-addr=cl-Server --yz-runtime-dir=/var/tmp/cL --yz-postprocess=$HOME/@cl-Make
 	yMAKE=$(executable_get)
 	objcopy -O binary $yMAKE yy-2.bin
 	objdump -d $yMAKE > yy-2.asm
@@ -68,8 +66,7 @@ function step2()
 #
 #
 #--------------------------------------------------------------------#
-PACKAGE=make-3.81
-#PACKAGE=util-linux-2.20
+PACKAGE=make-4.1
 TARGET=testsuites/${PACKAGE}
 
 prepare
