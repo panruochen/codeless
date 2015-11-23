@@ -49,16 +49,15 @@
 #                                  change of the makefile list will not cause remaking of the project.
 # CENTRALIZED_SINGLE_DEPEND_FILE:  Use one single dependency file instead of
 #                                  generating one dependency file for each source file.
-# VERBOSE_COMMANDS:                Display verbose commands instead of short commands during
+# VERBOSE:                         Display verbose commands instead of short commands during
 #                                  the make process.
 #-----------------------------------------------------------------------------------------------------#
 
-
 # Quiet commands
-ifeq ($(VERBOSE_COMMANDS),)
+ifeq ($(VERBOSE),)
 q           = @
 q_compile   = @echo '  CC     $$< => $$@';
-q_link      = @echo '  LD     $@';
+q_link      = @echo '  LINK   $@';
 q_ar        = @echo '  AR     $@';
 q_mkdir     = @echo '  MKDIR  $1';
 q_clean     = @echo '  CLEAN';

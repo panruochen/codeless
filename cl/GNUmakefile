@@ -11,7 +11,7 @@ SRC_EXTS        := cpp c
 TARGET_DEPENDS  := precedence-matrix.h help.h
 EXTERNAL_DEPENDS:= ../Makefile
 
-VERBOSE_COMMANDS := y
+#VERBOSE := y
 
 include ../tools/common_Makefile
 

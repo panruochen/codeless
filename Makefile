@@ -19,5 +19,5 @@ run: all
 	./tools/run-demo
 
 pre-pack:
-	@rm -rf testsuites/make-3.81
+	@rm -rf testsuites/make-4.1
 	@git clean -xfd
