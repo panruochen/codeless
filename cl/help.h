@@ -1,6 +1,6 @@
 #ifndef __HELP_H
 #define __HELP_H
-static const char *help_msg =
+static const char help_msg[] =
 "NAME\n"
 "       PROGRAM_NAME - Yet another C/C++ Preprocessor\n"
 "\n"
