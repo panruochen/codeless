@@ -17,8 +17,8 @@ CL针对这个问题提供了一套简单的解决方案，在编译过程中模
 
 ### 运行
 以linux为例，依次执行下列命令：
-1. 编译CL，假设代码目录为${CL\_DIR}
-2. *make defconfig CROSS\_COMPILE=${CROSS\_COMPILE} ARCH=${ARCH}*
+1. 编译CL，假设代码目录为${CL\_DIR}  
+2. *make defconfig CROSS\_COMPILE=${CROSS\_COMPILE} ARCH=${ARCH}*  
 3. *${CL\_DIR}/y-Make __--yz-cc=${CROSS\_COMPILE}gcc --yz-postprocess=${YOUR\_DIR} --yz-server-addr=${ANY\_VALID\_PATH}__ -j8*  
    --yz开头的参数传给CL的；--yz-cc表示编译器，--yz-postprocess表示先编译后清理源文件；一般来说只需要这两个参数就可以了。
    --yz-server-addr表示启动server并指定server的地址（该地址可以是任何有效的路径）。启动server可以减少临时文件的大小，
