@@ -16,7 +16,7 @@ CL针对这个问题提供了一套简单的解决方案，在编译过程中模
 - Gnu make
 
 ### 运行
-以linux为例，依次执行下列命令：
+以linux为例，依次执行下列命令：  
 1. 编译CL，假设代码目录为${CL\_DIR}  
 2. *make defconfig CROSS\_COMPILE=${CROSS\_COMPILE} ARCH=${ARCH}*  
 3. *${CL\_DIR}/y-Make __--yz-cc=${CROSS\_COMPILE}gcc --yz-postprocess=${YOUR\_DIR} --yz-server-addr=${ANY\_VALID\_PATH}__ -j8*  
