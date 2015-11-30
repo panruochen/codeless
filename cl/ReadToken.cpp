@@ -375,27 +375,25 @@ bool ReadToken(ParsedState *pstate, const char **line, SynToken *tokp, Exception
 
 		case SM_STATE_STRING :
 			cword += c;
-			switch( c ) {
+			switch( quation ) {
 			case '"':
-				if(quation == '"') {
+				if(c == '"') {
 					token = new_token(pstate, cword, SynToken::TA_STR);
 					p++;
 					goto done;
-				}
+				} else if(c == '\\')
+					state = SM_STATE_STR_ESC;
 				break;
 			case '\'':
-				if(quation == '\'') {
+				if(c == '\'') {
 					token = new_token(pstate, cword, SynToken::TA_CHAR);
 					token.i32_val = char_val;
 					p++;
 					goto done;
-				}
-				break;
-			case '\\':
-				state = SM_STATE_STR_ESC;
-				break;
-			default:
-				char_val = c;
+				} else if(c == '\\')
+					state = SM_STATE_STR_ESC;
+				else
+					char_val = c;
 				break;
 			}
 			break;
@@ -408,6 +406,7 @@ bool ReadToken(ParsedState *pstate, const char **line, SynToken *tokp, Exception
 				state = SM_STATE_STR_HEX;
 				break;
 			default:
+				char_val = c;
 				state = SM_STATE_STRING;
 				break;
 			}

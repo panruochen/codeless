@@ -1,4 +1,4 @@
-EXTRA_CFLAGS    := $(COMMON_CFLAGS) -ggdb -O3
+EXTRA_CFLAGS    := $(COMMON_CFLAGS) -ggdb #-O3
 EXTRA_CFLAGS    += -Wall -Wno-unused-result #-Wno-format
 DEFINES         := -DSANITY_CHECK
 SRCS            := ./ ./support/ ../common/
