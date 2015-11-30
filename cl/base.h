@@ -13,19 +13,28 @@
 #define offset_of(type, member) ((unsigned long)(&((type*)0)->member))
 #define container_of(ptr, type, member)  ((type*)((unsigned long)(ptr) - offset_of(type,member)))
 
-#define GDB_TRAP2(cond1, cond2)                   \
-do {                                              \
-	if( (cond1) && (cond2) )   {                  \
-		volatile int loop = 1;                    \
-		do {} while (loop);                       \
-	}                                             \
-} while(0)                                        \
+#define GDB_TRAP1(cond)          \
+do {                             \
+	if(cond)   {                 \
+		volatile int loop = 1;   \
+		do {} while (loop);      \
+	}                            \
+} while(0)                       \
+
+
+#define GDB_TRAP2(cond1, cond2)    \
+do {                               \
+	if( (cond1) && (cond2) )   {   \
+		volatile int loop = 1;     \
+		do {} while (loop);        \
+	}                              \
+} while(0)                         \
 
 #ifndef COUNT_OF
 #define COUNT_OF(a)  (sizeof(a) / sizeof(a[0]))
 #endif
 
-#define TR(pstate,opr)       pstate->syLut.TrId(opr).c_str()
+#define TR(pstate,opr)   pstate->syLut.TrId(opr).c_str()
 #define TOKEN_NAME(a)    (a).name.c_str()
 
 #define CB_BEGIN     {

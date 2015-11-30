@@ -1,0 +1,69 @@
+#!/usr/bin/python
+#
+# Grep patterns from a file where names to be search are stored.
+#
+
+import sys, os, glob, stat
+import shutil
+import optparse
+import subprocess
+
+DEF_PJ_NAME = 'projlist.txt'
+
+def find_proj_file() :
+    curdir = './'
+    pj_file = None
+    while True :
+        pj_file = curdir + DEF_PJ_NAME
+        if os.path.exists(pj_file) :
+            break
+        curdir += '../'
+    return curdir + pj_file
+
+oparser = optparse.OptionParser()
+
+oparser.add_option("-e", '', action='append', dest='patterns', help="Specify a source file name", default=[])
+oparser.add_option("-i", '', action='store_true', dest='ignorecase', help="Case-insensitive search")
+oparser.add_option("-f", '', action='store', dest='listfile', help="Sepcify the file where names to be search are fetch", default=None)
+
+(options, args) = oparser.parse_args()
+
+if options.listfile is None :
+    options.listfile = find_proj_file()
+
+if options.listfile is None and len(args) == 0 :
+    oparser.print_help()
+    exit(2)
+
+options.listfile = os.path.realpath(options.listfile)
+
+fd = open(options.listfile, "r")
+if fd is None :
+    print >>sys.stderr, "Cannot open \"%s\"" % options.listfile
+    exit(2)
+
+basic_args = ['grep', '--color=auto']
+
+if options.ignorecase :
+    basic_args.append('-i')
+
+for i in options.patterns :
+    basic_args.append('-e')
+    basic_args.append(i)
+
+for line in fd :
+    fx = line.rstrip('\r\n').split()
+    os.chdir(fx[1])
+    break
+
+cmd_args = list(basic_args)
+for line in fd :
+    cmd_args.append(line.rstrip('\r\n'))
+    if len(cmd_args) == 400 :
+#        print ' '.join(cmd_args)
+        subprocess.call(cmd_args)
+        cmd_args = list(basic_args)
+
+if len(cmd_args) > len(basic_args) :
+    subprocess.call(cmd_args)
+
