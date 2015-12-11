@@ -6,6 +6,7 @@
 
 class ParserContext {
 private:
+	void   try_collect_source_file(const char *arg);
 	int    get_options(int argc, char *argv[], const char *short_options, const struct option *long_options);
 	int    last_optind;
 	int    levels;

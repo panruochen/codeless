@@ -155,6 +155,29 @@ static const struct gnu_option_s *parse_again(const char *arg)
 	return NULL;
 }
 
+void ParserContext::try_collect_source_file(const char *arg)
+{
+	uint8_t type;
+
+//	type = check_source_type(argv[i]);
+	type = check_source_type(arg);
+	switch(type) {
+	case SOURCE_TYPE_CPP:
+		predef_macros << "#define __cplusplus\n";
+		predef_macros << "#define and    &&\n";
+		predef_macros << "#define or     ||\n";
+		predef_macros << "#define compl  ~\n";
+		predef_macros << "#define not    !\n";
+		predef_macros << "#define not_eq !=\n";
+		predef_macros << "#define bitand &\n";
+		predef_macros << "#define bitor  |\n";
+		predef_macros << "#define xor    ^\n";
+	case SOURCE_TYPE_C:
+	case SOURCE_TYPE_S:
+		source_files.push_back(arg);
+	}
+}
+
 int ParserContext::get_options(int argc, char *argv[],const char *short_options, const struct option *long_options)
 {
 	int retval = -1;
@@ -171,6 +194,7 @@ int ParserContext::get_options(int argc, char *argv[],const char *short_options,
 		last_optind = optind;
 		/* Prevent getopt re-order the argv array */
 		if(last_c == '?' && optind < argc && *argv[optind] != '-') {
+			try_collect_source_file(argv[optind]);
 			optind++;
 			save_cc_args();
 			last_c = 0;
@@ -332,25 +356,7 @@ retry:
 	CB_END
 
 	for(int i = optind; i < argc; i++) {
-		uint8_t type;
-
-		type = check_source_type(argv[i]);
-		switch(type) {
-		case SOURCE_TYPE_CPP:
-			predef_macros << "#define __cplusplus\n";
-			predef_macros << "#define and    &&\n";
-			predef_macros << "#define or     ||\n";
-			predef_macros << "#define compl  ~\n";
-			predef_macros << "#define not    !\n";
-			predef_macros << "#define not_eq !=\n";
-			predef_macros << "#define bitand &\n";
-			predef_macros << "#define bitor  |\n";
-			predef_macros << "#define xor    ^\n";
-		case SOURCE_TYPE_C:
-		case SOURCE_TYPE_S:
-			source_files.push_back(argv[i]);
-		}
-
+		try_collect_source_file(argv[i]);
 		if(levels == 1) {
 			cc_args += ' ' ;
 			cc_args += DoQuotes(argv[i]);
