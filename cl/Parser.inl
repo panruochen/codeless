@@ -160,7 +160,8 @@ inline Parser::IncludedFile::Cond::Cond(CondChain *head_, Cond::COND_TYPE type_,
 #endif
 	value = value_;
 	sub_chains.Init();
-	end = INV_LN;
+	end  = INV_LN;
+	eoff = 0;
 	head = head_;
 	filename = filename_;
 }
@@ -179,6 +180,8 @@ inline Parser::IncludedFile::CondChain::CondChain()
 #endif
 	chain.Init();
 	superior  = NULL;
+	begin = 0;
+	end   = 0;
 }
 
 inline void Parser::IncludedFile::CondChain::sanity_check()
@@ -216,7 +219,7 @@ inline void Parser::IncludedFile::CondChain::add_else(Cond *c)
 inline void Parser::IncludedFile::CondChain::add_endif(linenum_t line_nr)
 {
 	mark_end(line_nr);
-	end = line_nr;
+	end  = line_nr;
 }
 
 inline void Parser::IncludedFile::add_if(bool value)
@@ -261,6 +264,7 @@ inline void Parser::IncludedFile::add_endif()
 		return;
 	}
 	CondChain *cc = cursor->head;
+	cursor->eoff = ifile->offset;
 	cc->add_endif(ifile->line);
 #if SANITY_CHECK
 	assert(!cc->chain.IsEmpty());

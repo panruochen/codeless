@@ -16,7 +16,8 @@ def str2bool(v):
 
 def hash_key(begin, end) :
     a = begin.split(',')
-    return (int(end) * 0x100000000) + int(a[0])
+    b = end.split(',')
+    return (int(b[0]) * 0x100000000) + int(a[0])
 
 class CConditional :
     def __init__(self) :

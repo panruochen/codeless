@@ -8,12 +8,13 @@ import ConfigParser, optparse
 from collections import deque
 
 class CCond :
-    def __init__(self, type, value, begin, boff, end) :
+    def __init__(self, type, value, begin, boff, end, eoff) :
         self.type  = type
         self.value = value
         self.begin = begin
         self.boff  = boff
         self.end   = end
+        self.eoff  = eoff
 
 class CodeBlock :
     def __init__(self, begin, end, type) :
@@ -103,7 +104,8 @@ def proc_if(c_blocks, q) :
     if not has_x :
         end = tmplist[-1].end
 #        print >>sys.stderr, "keep endif on %u" % end
-        cb = CodeBlock(end, end, "endif")
+#        cb = CodeBlock(end, end, "endif")
+        cb = CodeBlock(tmplist[-1].end + tmplist[-1].eoff, tmplist[-1].end, "endif")
         c_blocks.append(cb)
     else :
         if no_if :
@@ -112,6 +114,16 @@ def proc_if(c_blocks, q) :
             c_blocks.append(cb)
         if tmplist[-1].value == 0 :
             c_blocks[-1].end -= 1 ## keep the #endif
+
+def tr(arg) :
+    if arg.find(',') >= 0 :
+        fx = arg.split(',')
+        a1 = int(fx[0])
+        a2 = int(fx[1])
+    else :
+        a1 = int(arg)
+        a2 = 0
+    return a1,a2
 
 def run(options, us_files, fdump, processed_files) :
     fd = open(options.cvfile, "r")
@@ -142,14 +154,10 @@ def run(options, us_files, fdump, processed_files) :
                     proc_if(c_blocks, q)
 
             q  = levels[nh]
-            if fx[3].find(',') >= 0 :
-                fz = fx[3].split(',')
-                a1 = int(fz[0])
-                a2 = int(fz[1])
-            else :
-                a1 = int(fx[3])
-                a2 = 0
-            c = CCond(fx[1], int(fx[2]), a1, a2, int(fx[4]))
+
+            a1,a2 = tr(fx[3])
+            b1,b2 = tr(fx[4])
+            c = CCond(fx[1], int(fx[2]), a1, a2, b1, b2)
             t = fx[1]
             if t == "if" :
                 if len(q) > 0 and q[-1].type == 'if' :

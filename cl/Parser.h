@@ -122,6 +122,7 @@ protected:
 			const linenum_t begin;
 			const int boff;
 			linenum_t end;
+			int eoff;
 			bool value;
 			CListEntry sub_chains; /* subordinate chains */
 
@@ -146,7 +147,7 @@ protected:
 			CListEntry  link;
 			CListEntry  chain; /* The conditional chain */
 			size_t      begin;
-			size_t      end; /* The end line number */
+			size_t      end;   /* The end line number */
 			Cond      *superior;
 
 		public:

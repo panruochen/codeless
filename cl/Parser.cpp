@@ -663,10 +663,19 @@ void Parser::IncludedFile::save_conditional(Cond *c, int rh)
 
 	assert(c->type <= Cond::CT_ELSE);
 	if(directives[c->type]) {
+		tmp.format("  %-4u %s %s ", rh, directives[c->type], (c->value ? "true" : "false"));
+		cr_text += tmp;
+
 		if(c->boff)
-			tmp.format("  %-4u %s %s %u,%d %u\n", rh, directives[c->type], (c->value ? "true" : "false"), c->begin, c->boff, c->end);
+			tmp.format("%u,%d ", c->begin, c->boff);
 		else
-			tmp.format("  %-4u %s %s %u %u\n", rh, directives[c->type], (c->value ? "true" : "false"), c->begin, c->end);
+			tmp.format("%u ", c->begin);
+		cr_text += tmp;
+
+		if(c->eoff)
+			tmp.format("%u,%d\n", c->end, c->eoff);
+		else
+			tmp.format("%u\n", c->end);
 		cr_text += tmp;
 	}
 }
@@ -1106,6 +1115,10 @@ int Parser::ReadLine()
 	state = STAT_0;  \
 	goto retry;      \
 } while(0)
+
+#define ENTER_COMMENT() do { prev_state = state; state = STAT_SLASH; } while(0)
+#define EXIT_COMMENT()  do { state = prev_state; prev_state = STAT_INVALID; } while(0)
+
 	CC_STRING& line = pline.parsed;
 
 	pline.from.clear();
@@ -1115,6 +1128,7 @@ int Parser::ReadLine()
 	pline.content = -1;
 
 	enum {
+		STAT_INVALID = -1,
 		STAT_INIT = 0,
 
 		STAT_SPACE1,
@@ -1133,7 +1147,7 @@ int Parser::ReadLine()
 		STAT_DQ,
 		STAT_SQ_ESC,
 		STAT_DQ_ESC,
-	} state;
+	} state, prev_state = STAT_INVALID;
 	int c;
 	int foldcnt = 0;
 	File *file = GetCurrentFile().ifile;
@@ -1174,7 +1188,7 @@ retry:
 		case STAT_0:
 			switch(c) {
 			case '/':
-				state = STAT_SLASH;
+				ENTER_COMMENT();
 				break;
 			case '\\':
 				state = STAT_FOLD;
@@ -1211,7 +1225,7 @@ retry:
 				state = STAT_SQ;
 				break;
 			default:
-				state = STAT_0;
+				EXIT_COMMENT();
 			}
 			break;
 
@@ -1229,7 +1243,7 @@ retry:
 
 		case STAT_ASTERISK: /* asterisk */
 			if(c == '/') {
-				state = STAT_0;
+				EXIT_COMMENT();
 				continue;
 			}
 			else if(c != '*')
@@ -1284,6 +1298,9 @@ retry:
 			case ' ':
 			case '\t':
 				break;
+			case '/':
+				ENTER_COMMENT();
+				break;
 			default:
 				RETRY();
 			}
@@ -1300,7 +1317,9 @@ retry:
 				state = STAT_WORD;
 				directive = '#';
 				directive += c;
-			} else if(!isblank(c))
+			} else if(c == '/')
+				ENTER_COMMENT();
+			else if(!isblank(c))
 				RETRY();
 			break;
 
@@ -1312,12 +1331,16 @@ retry:
 					if(preprocessors[i] == directive) {
 						pline.pp_id = pstate->syLut.Put(preprocessors[i]);
 						pline.content = line.size();
+						state = STAT_0;
 						break;
 					}
 				RETRY();
 			}
 			break;
 
+		case STAT_INVALID:
+			excep = "Invalid state";
+			return -1;
 		}
 
 		if(state != STAT_LC && state != STAT_BC && state != STAT_FOLD && state != STAT_ASTERISK)
