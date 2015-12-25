@@ -124,9 +124,11 @@ ssize_t DsFileWriter::Write(const void *buf, size_t count)
 write_fail:
 	elapsed   = calc_time_elapsed(&tv0);
 
-	ipsc_acc_bytes(gvar_sm, id, msghdr.len);
-	ipsc_acc_usecs(gvar_sm, id, elapsed);
-	ipsc_acc_writes(gvar_sm,id, 1);
+	if(gvar_sm) {
+		ipsc_acc_bytes(gvar_sm, id, msghdr.len);
+		ipsc_acc_usecs(gvar_sm, id, elapsed);
+		ipsc_acc_writes(gvar_sm,id, 1);
+	}
 
 	if(retval < 0) {
 		fprintf(stderr, "Write fail\n");

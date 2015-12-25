@@ -103,9 +103,11 @@ err_ret:
 	if(fd > 0)
 		close(fd);
 
-	ipsc_acc_bytes(gvar_sm, id, retval);
-	ipsc_acc_usecs(gvar_sm, id, calc_time_elapsed(&tv0));
-	ipsc_acc_writes(gvar_sm,id, 1);
+	if(gvar_sm) {
+		ipsc_acc_bytes(gvar_sm, id, retval);
+		ipsc_acc_usecs(gvar_sm, id, calc_time_elapsed(&tv0));
+		ipsc_acc_writes(gvar_sm,id, 1);
+	}
 
 	return retval;
 }

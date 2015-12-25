@@ -26,7 +26,7 @@
 #define ALOG(fmt,args...)  do{;}while(0)
 #endif
 
-InterProcessSharedCounter *sm;
+static InterProcessSharedCounter *gvar_sm;
 
 class Server;
 class Session {
@@ -350,7 +350,7 @@ void * FileAgent::MainThread()
 		}
 	}
 	fclose(fp);
-	printf("[%u] %u MSGs received, %u MSGs written out; %u sent from clients\n", msg_type, msg_rx, msg_wr, sm->records[msg_type].writes);
+	printf("[%u] %u MSGs received, %u MSGs written out; %u sent from clients\n", msg_type, msg_rx, msg_wr, gvar_sm->records[msg_type].writes);
 	return NULL;
 }
 
@@ -696,15 +696,15 @@ int main(int argc, char *argv[])
 {
 	Server server(32);
 	int ret;
-//	InterProcessSharedCounter *sm;
+//	InterProcessSharedCounter *gvar_sm;
 
 	signal(SIGUSR1, sighandler);
 
 	if(server.ParseOptions(argc,argv))
 		exit(1);
 
-	sm = ipsc_create("/var/tmp/SM0");
-	if(sm == NULL)
+	gvar_sm = ipsc_create("/var/tmp/SM0");
+	if(gvar_sm == NULL)
 		exit(ENOMEM);
 
 	ret = server.Listen();
@@ -715,8 +715,8 @@ int main(int argc, char *argv[])
 	if(!ret)
 		goto do_exit;
 
-//	printf("%u (%uK) writes in %u.%03u seconds\n", sm->u32_array[0], (uint32_t)(sm->u64_array[1]/1024),
-//		(uint32_t)(sm->u64_array[0]/1000000ULL), (uint32_t)(sm->u64_array[0]%1000000ULL)/1000);
+//	printf("%u (%uK) writes in %u.%03u seconds\n", gvar_sm->u32_array[0], (uint32_t)(gvar_sm->u64_array[1]/1024),
+//		(uint32_t)(gvar_sm->u64_array[0]/1000000ULL), (uint32_t)(gvar_sm->u64_array[0]%1000000ULL)/1000);
 	return 0;
 
 do_exit:
