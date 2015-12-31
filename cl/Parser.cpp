@@ -17,6 +17,18 @@
 #include "utils.h"
 #include "misc.h"
 
+static const char *tr_token(ParsedState *pstate, SynToken *tokp)
+{
+	if(tokp->attr == SynToken::TA_UINT ) {
+		tokp->name.format("%u", tokp->u32_val);
+		return tokp->name.c_str();
+	} else if(tokp->attr == SynToken::TA_INT ) {
+		tokp->name.format("%d", tokp->u32_val);
+		return tokp->name.c_str();
+	}
+	return TR(pstate, tokp->id);
+}
+
 static bool check_prev_operator(sym_t id)
 {
 	switch(id) {
@@ -258,17 +270,17 @@ static bool DoCalculationOnStackTop(ParsedState *pstate, sym_t opr, CC_STACK<Syn
 		opnd_stack.pop(b);
 		opnd_stack.pop(a);
 
-		log(LOGV_DEBUG, "%s ? %s : %s\n", TOKEN_NAME(a), TOKEN_NAME(b), TOKEN_NAME(c));
+		log(LOGV_DEBUG, "%s ? %s : %s\n", tr_token(pstate,&a), tr_token(pstate,&b), tr_token(pstate,&c));
 		result = a.u32_val ? b : c;
 		goto done;
 	} else if( opr != SSID_LOGIC_NOT && opr != SSID_BITWISE_NOT ) {
 		if( ! opnd_stack.pop(b) || ! opnd_stack.pop(a))
 			goto error_no_operands;
-		log(LOGV_DEBUG, "%s %s %s\n", TOKEN_NAME(a), TR(pstate,opr), TOKEN_NAME(b));
+		log(LOGV_DEBUG, "%s %s %s\n", tr_token(pstate,&a), TR(pstate,opr), tr_token(pstate,&b));
 	} else {
 		if( ! opnd_stack.pop(a) )
 			goto error_no_operands;
-		log(LOGV_DEBUG, "! %s\n", TOKEN_NAME(a));
+		log(LOGV_DEBUG, "! %s\n", tr_token(pstate,&a));
 	}
 	if( ! DoCalculate(a, opr, b, result, pstate, excep) ) {
 		return false;
@@ -294,6 +306,7 @@ static int symbol_definition_check(ParsedState *pstate, const char *line, bool r
 	int retval = TSV_X;
 	SynToken token;
 	SynMacro *minfo;
+	const char *name = TR(pstate, SSID_SYMBOL_X);
 
 	if( ! ReadToken(pstate, &line, &token, excep, false) || excep->GetError() != NULL )
 		goto error;
@@ -314,13 +327,14 @@ static int symbol_definition_check(ParsedState *pstate, const char *line, bool r
 		retval  = (minfo == NULL) ? TSV_0 : TSV_1;
 		retval ^= reverse;
 	}
+	name = retval ? "1" : "0";
 
 error:
 	if(result != NULL) {
 		result->attr    = attr;
 		result->u32_val = retval;
 		result->id      = SSID_SYMBOL_X;
-		result->name    = TR(pstate, SSID_SYMBOL_X);
+		result->name    = name;
 	}
 	if( gv_preprocess_mode )
 		assert(retval != TSV_X);
@@ -389,7 +403,7 @@ static int expression_evaluate(ParsedState *pstate, const char *line, Exception 
 		if( token.attr == SynToken::TA_CHAR )
 			token.attr = SynToken::TA_INT;
 		if( sign != 0 ) {
-			if(token.attr != SynToken::TA_UINT) {
+			if(token.attr != SynToken::TA_UINT && token.id != SSID_DEFINED) {
 				excep->format("%s following %c", TR(pstate,token.id), sign);
 				goto error;
 			}
@@ -461,6 +475,7 @@ static int expression_evaluate(ParsedState *pstate, const char *line, Exception 
 					goto error;
 				state = STAT_INIT;
 				opnd_stack.push(token);
+				opr = token.id;
 				goto next;
 			} else {
 				*excep = "Unmatched (";
