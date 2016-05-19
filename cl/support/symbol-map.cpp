@@ -4,7 +4,7 @@
 #include <errno.h>
 #include "cc_string.h"
 
-#include "ParsedState.h"
+#include "InternalTables.h"
 
 struct str_less {
     bool operator() (const CC_STRING& s1, const CC_STRING& s2)

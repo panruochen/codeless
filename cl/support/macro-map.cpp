@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#include "ParsedState.h"
+#include "InternalTables.h"
 
 typedef std::map<sym_t,SynMacro*>  MAP;
 

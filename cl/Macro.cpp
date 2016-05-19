@@ -9,37 +9,64 @@
 #include <assert.h>
 
 #include "base.h"
-#include "ParsedState.h"
+#include "misc.h"
+#include "InternalTables.h"
 #include "cc_string.h"
 #include "cc_array.h"
-#include "Exception.h"
 #include "GlobalVars.h"
 
-class CMaExpander {
+class Exception {
+
 public:
-	CMaExpander(ParsedState *pstate, const char *line, bool for_include);
+	CC_STRING  msg;
+    inline Exception(void) {
+	}
+
+    inline Exception(const char *msg) {
+		this->msg = msg;
+	}
+
+    inline Exception(const CC_STRING& msg) {
+		this->msg = msg;
+	}
+
+	inline Exception& operator = (const char *msg) {
+		this->msg = msg;
+		return *this;
+	}
+	inline Exception& operator = (const CC_STRING& msg) {
+		this->msg = msg;
+		return *this;
+	}
+};
+
+static Exception excep;
+
+class ExpandMacro {
+public:
+	ExpandMacro(InternalTables *pstate, const char *line, bool for_include);
 	CC_STRING   TryExpand();
 
 private:
-	const char *  pos;
-	ParsedState*  pstate;
+	ReadTokenOp rop;
+	InternalTables *pstate;
 	CC_STRING     inStr;
-	bool          for_include;
-	sym_t         last_ids[2];
-	Exception    excep;
+	bool for_include;
+	sym_t last_ids[2];
 
-	CC_STRING     Expand_FLM(SynMacro *ma);
-	CC_STRING     Expand_OLM(SynMacro *ma);
-	SynMacro*       GetMacro(sym_t mid);
-	inline bool   in_defined_context();
+	CC_STRING Expand_FLM(SynMacro *ma);
+	CC_STRING Expand_OLM(SynMacro *ma);
+	SynMacro* GetMacro(sym_t mid);
+	inline bool in_defined_context();
 
-	bool          ReadToken(SynToken *token);
-	void          IgnoreSpaces();
-	bool          IsValidToken(const CC_STRING& s);
-	void          Trim(CC_STRING &s);
+	void IgnoreSpaces();
+	bool IsValidToken(const CC_STRING& s);
+	void Trim(CC_STRING &s);
+	void process_define(sym_t mid, SynMacro *ma);
+	bool ReadToken(ReadTokenOp *rop, bool for_include);
 };
 
-inline bool CMaExpander::in_defined_context()
+inline bool ExpandMacro::in_defined_context()
 {
 	return (last_ids[1] == SSID_DEFINED ||
 		(last_ids[0] == SSID_DEFINED && last_ids[1] == SSID_LEFT_PARENTHESIS));
@@ -48,18 +75,15 @@ inline bool CMaExpander::in_defined_context()
 #define IS_FLM(ma)        ((ma)->nr_args != SynMacro::OL_M)
 #define IS_MACRO(ma)      ((ma) != NULL && (ma) != SynMacro::NotDef)
 
-bool ReadToken(ParsedState *pstate, const char **line, SynToken *tokp, Exception *excep, bool for_include);
-
-static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma);
 
 /* Find the specific macro in the table. Expand it if it is not expanded.
  *
  */
-SynMacro * CMaExpander::GetMacro(sym_t mid)
+SynMacro * ExpandMacro::GetMacro(sym_t mid)
 {
 	SynMacro *ma = pstate->maLut.Lookup(mid);
 	if( IS_MACRO(ma) && ma->id == SSID_INVALID ) {
-		handle_define(pstate, mid, ma);
+		process_define(mid, ma);
 		free(ma->line);
 		ma->line = NULL;
 		return pstate->maLut.Lookup(mid);
@@ -96,36 +120,24 @@ static void __NO_USE__ dump(const XCHAR *xc)
 		printf("%s\n", s.c_str());
 }
 
-static bool get_token(ParsedState *pstate, const char **line, SynToken *token, bool for_include)
+bool ExpandMacro::ReadToken(ReadTokenOp *rop, bool for_include)
 {
-	bool retval;
-	Exception *ex = new Exception;
+	int retval;
 
-	retval = ::ReadToken(pstate, line, token, ex, for_include);
-	if( ex->GetError() != NULL )
-		throw ex;
-	delete ex;
-	return retval;
-}
-
-
-bool CMaExpander::ReadToken(SynToken *token)
-{
-	bool retval;
-
-	retval = ::ReadToken(pstate, &pos, token, &excep, for_include);
-	if( excep.GetError() != NULL )
+	retval = ::ReadToken(pstate, rop, for_include);
+	if( retval < 0 ) {
+		excep = rop->error;
 		throw &excep;
+	}
 	return retval;
 }
 
-
-void CMaExpander::IgnoreSpaces()
+void ExpandMacro::IgnoreSpaces()
 {
-	skip_blanks(pos);
+	skip_blanks(rop.cp);
 }
 
-bool CMaExpander::IsValidToken(const CC_STRING& s)
+bool ExpandMacro::IsValidToken(const CC_STRING& s)
 {
 	const char *p = s.c_str();
 	if(p == NULL)
@@ -141,7 +153,7 @@ bool CMaExpander::IsValidToken(const CC_STRING& s)
 	return true;
 }
 
-void CMaExpander::Trim(CC_STRING& s)
+void ExpandMacro::Trim(CC_STRING& s)
 {
 	const char *p1, *p2, *end = s.c_str() + s.size();
 
@@ -156,17 +168,19 @@ void CMaExpander::Trim(CC_STRING& s)
 	s = ns;
 }
 
-CC_STRING CMaExpander::Expand_FLM(SynMacro *ma)
+CC_STRING ExpandMacro::Expand_FLM(SynMacro *ma)
 {
 	CC_STRING outs;
 	CC_ARRAY<CC_STRING> margs;
 	CC_STRING carg;
-	const char *p = pos;
+	const char *p = rop.cp;
 	int level;
 
 	skip_blanks(p);
 	if( iseol(*p) ) {
-		excep.format("Macro \"%s\" expects arguments", TR(pstate,ma->id));
+		CC_STRING a;
+		a.format("Macro \"%s\" expects arguments", TR(pstate,ma->id));
+		excep = a;
 		throw &excep;
 	}
 	if( *p != '(' ) {
@@ -208,7 +222,7 @@ CC_STRING CMaExpander::Expand_FLM(SynMacro *ma)
 		}
 		p++;
 	}
-	pos = p;
+	rop.cp = p;
 
 	XCHAR *xc;
 	CC_STRING s;
@@ -220,8 +234,10 @@ CC_STRING CMaExpander::Expand_FLM(SynMacro *ma)
 		if( ma->va_args && margs.size() + 1 == n ) {
 			margs.push_back(CC_STRING(""));
 		} else {
-			excep.format("Macro \"%s\" requires %u arguments, but %u given",
+			CC_STRING a;
+			a.format("Macro \"%s\" requires %u arguments, but %u given",
 				TR(pstate,ma->id), n, margs.size() );
+			excep = a;
 			throw &excep;
 		}
 	}
@@ -229,7 +245,7 @@ CC_STRING CMaExpander::Expand_FLM(SynMacro *ma)
 	for(xc = ma->parsed; *xc != 0; xc++) {
 		if(IS_MA_PAR2(*xc) || IS_MA_PAR0(*xc)) {
 			const CC_STRING& carg = margs[(uint8_t)*xc];
-			CMaExpander expander2(pstate, carg.c_str(), for_include);
+			ExpandMacro expander2(pstate, carg.c_str(), for_include);
 			CC_STRING tmp;
 			tmp = expander2.TryExpand();
 			s += tmp;
@@ -248,7 +264,7 @@ CC_STRING CMaExpander::Expand_FLM(SynMacro *ma)
 }
 
 
-CC_STRING CMaExpander::Expand_OLM(SynMacro *ma)
+CC_STRING ExpandMacro::Expand_OLM(SynMacro *ma)
 {
 	XCHAR *xc;
 	CC_STRING outs;
@@ -259,9 +275,8 @@ CC_STRING CMaExpander::Expand_OLM(SynMacro *ma)
 }
 
 
-CC_STRING CMaExpander::TryExpand()
+CC_STRING ExpandMacro::TryExpand()
 {
-	SynToken token;
 	CC_STRING outs;
 	static int debug_level;
 	CC_STRING saved_inStr = inStr;
@@ -270,19 +285,19 @@ CC_STRING CMaExpander::TryExpand()
 
 
 	while(1) {
-		const char *const last_pos  = pos;
+		const char *const last_pos  = rop.cp;
 
 		IgnoreSpaces();
-		if( ! get_token(pstate, &pos, &token, for_include) )
+		if( ! ReadToken(&rop, for_include) )
 			break;
-		if( token.attr == SynToken::TA_IDENT ) {
+		if( rop.token.attr == SynToken::TA_IDENT ) {
 			SynMacro *ma;
 			CC_STRING tmp;
-			ma = GetMacro(token.id);
+			ma = GetMacro(rop.token.id);
 			if( IS_MACRO(ma) && ! in_defined_context() ) {
 				if( IS_FLM(ma) ) {
-					skip_blanks(pos);
-					if( *pos == '(' ) {
+					skip_blanks(rop.cp);
+					if( *rop.cp == '(' ) {
 						tmp = Expand_FLM(ma);
 					}
 					else
@@ -296,18 +311,18 @@ CC_STRING CMaExpander::TryExpand()
 
 				newStr.strcat(inStr.c_str(), last_pos);
 				newStr += tmp;
-				newStr += pos;
+				newStr += rop.cp;
 
 				inStr = newStr;
-				pos   = inStr.c_str() + offset;
+				rop.cp   = inStr.c_str() + offset;
 			} else
 				goto do_cat;
 		} else {
 		do_cat:
-			outs.strcat(last_pos, pos);
+			outs.strcat(last_pos, rop.cp);
 		}
 		last_ids[0] = last_ids[1];
-		last_ids[1] = token.id;
+		last_ids[1] = rop.token.id;
 	}
 
 //	printf("Leave [%u] %s\n", debug_level, outs.c_str());
@@ -318,31 +333,31 @@ CC_STRING CMaExpander::TryExpand()
 }
 
 
-CMaExpander::CMaExpander(ParsedState *pstate, const char *line, bool for_include)
+ExpandMacro::ExpandMacro(InternalTables *pstate, const char *line, bool for_include)
 {
-	this->pstate          = pstate;
+	this->pstate      = pstate;
 	this->inStr       = line;
-	this->pos         = inStr.c_str();
+	this->rop.line    =
+	this->rop.cp      = inStr.c_str();
 	this->for_include = for_include;
 	last_ids[0] = SSID_INVALID;
 	last_ids[1] = SSID_INVALID;
 }
 
-CC_STRING ExpandLine(ParsedState *pstate, bool for_include, const char *line, Exception *excep)
+CC_STRING ExpandLine(InternalTables *pstate, bool for_include, const char *line, CC_STRING& errmsg)
 {
-	CMaExpander maExpander(pstate, line, for_include );
+	ExpandMacro maExpander(pstate, line, for_include );
 	CC_STRING expansion;
 
 	try {
 		expansion = maExpander.TryExpand();
-	} catch(Exception *e) {
-		*excep = *e;
+	} catch(Exception *ex) {
+		errmsg = ex->msg;
 	}
 	return expansion;
 }
 
 /****** Part II: MACRO RECOGNITION ********/
-static Exception gEx;
 
 static int find(sym_t id, const CC_ARRAY<sym_t>& list)
 {
@@ -363,7 +378,7 @@ static void __NO_USE__ dump(const char *a, const char *b)
 }
 
 
-static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
+void ExpandMacro::process_define(sym_t mid, SynMacro *ma)
 {
 	enum {
 		STA_OKAY,
@@ -373,14 +388,14 @@ static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 		STA_TRIDOT,
 	} state;
 
-	const char *line = ma->line;
-	SynToken token;
+	ReadTokenOp rop(ma->line);
+	SynToken& token = rop.token;
 
-	if( ! get_token(pstate, &line, &token, false) )
+	if( ! ReadToken(&rop, false) )
 		return;
 
 	if(token.attr == SynToken::TA_IDENT) {
-		if(*line == '(') {
+		if(*rop.cp == '(') {
 			CC_ARRAY<sym_t>  para_list;
 			XCHAR *xc;
 			const char *last_pos;
@@ -388,8 +403,8 @@ static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 			bool has_va_args = false;
 
 			state = STA_LEFT_PARENTHESIS;
-			line++;
-			while( get_token(pstate, &line, &token, false) ) {
+			rop.cp++;
+			while( ReadToken(&rop, false) ) {
 				switch(state) {
 				case STA_LEFT_PARENTHESIS:
 					if( token.id == SSID_RIGHT_PARENTHESIS) {
@@ -402,7 +417,9 @@ static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 						state = STA_TRIDOT;
 						continue;
 					} else {
-						gEx.format("\"%s\" may not appear in macro parameter list", TR(pstate,token.id));
+						CC_STRING a;
+						a.format("\"%s\" may not appear in macro parameter list", TR(pstate,token.id));
+						excep = a;
 						goto error;
 					}
 					break;
@@ -416,7 +433,7 @@ static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 					else if(token.id == SSID_TRIDOT) {
 						state = STA_TRIDOT;
 					} else {
-						gEx = "macro parameters must be comma-separated";
+						excep = "macro parameters must be comma-separated";
 						goto error;
 					}
 					break;
@@ -429,15 +446,15 @@ static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 						para_list.push_back(token.id);
 						state = STA_SEPERATOR;
 					} else {
-						gEx = "parameter name missing";
+						excep = "parameter name missing";
 						goto error;
 					}
 					break;
 
 				case STA_TRIDOT:
 					if(token.id != SSID_RIGHT_PARENTHESIS) {
-						gEx = "missing ')' in macro parameter list";
-						throw &gEx;
+						excep = "missing ')' in macro parameter list";
+						goto error;
 					}
 					has_va_args = true;
 					if(last_para == SSID_COMMA || last_para == SSID_LEFT_PARENTHESIS) {
@@ -453,28 +470,25 @@ static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 			}
 
 			if(state != STA_OKAY) {
-				gEx = "missing ')' in macro parameter list";
-				throw &gEx;
+				excep = "missing ')' in macro parameter list";
+				goto error;
 			}
 
 		okay:
-			xc = (XCHAR*) malloc(sizeof(XCHAR) * strlen(line) + 4);
+			xc = (XCHAR*) malloc(sizeof(XCHAR) * strlen(rop.cp) + 4);
 			ma->id         = mid;
 			ma->parsed     = xc;
 			ma->nr_args    = para_list.size();
 			ma->va_args    = has_va_args;
 
-			skip_blanks(line);
-			last_pos = line;
+			skip_blanks(rop.cp);
+			last_pos = rop.cp;
 			sym_t prev_sid = SSID_INVALID;
 
-			while(  ReadToken(pstate, &line, &token, &gEx, false) ) {
-				if(gEx.GetError() != NULL)
-					throw (&gEx);
-
+			while(ReadToken(&rop, false)) {
 				if(token.id == SSID_DUAL_SHARP) {
 					if(xc == ma->parsed) {
-						gEx = "'##' cannot appear at either end of a macro expansion";
+						excep = "'##' cannot appear at either end of a macro expansion";
 						goto error;
 					} else if( IS_MA_PAR0(*(xc-1)) )
 						*(xc-1) |= XF_MA_PAR2;
@@ -498,7 +512,7 @@ static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 						para_ord = find(token.id, para_list);
 					if(prev_sid == SSID_SHARP) {
 						if(para_ord < 0) {
-							gEx = "'#' is not followed by a macro parameter";
+							excep = "'#' is not followed by a macro parameter";
 							goto error;
 						}
 						magic = 1;
@@ -514,29 +528,29 @@ static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 					if(prev_sid == SSID_DUAL_SHARP) {
 						skip_blanks(last_pos);
 					}
-					join(&xc, last_pos, line);
+					join(&xc, last_pos, rop.cp);
 				}
-				last_pos = line;
+				last_pos = rop.cp;
 				prev_sid = token.id;
 			} /*end while*/
 			*xc = 0;
 		} else {
 			XCHAR *xc;
 
-			xc = (XCHAR*) malloc(sizeof(XCHAR) * strlen(line) + 4);
+			xc = (XCHAR*) malloc(sizeof(XCHAR) * strlen(rop.cp) + 4);
 			ma->id      = mid;
 			ma->parsed  = xc;
 			ma->nr_args = SynMacro::OL_M;
 
-			skip_blanks(line);
+			skip_blanks(rop.cp);
 			while(1) {
-				char c = *line;
+				char c = *rop.cp;
 				if( iseol(c) ) {
 					*xc = '\0';
 					break;
 				}
 				*xc = c;
-				xc++, line++;
+				xc++, rop.cp++;
 			}
 		}
 	}
@@ -544,22 +558,22 @@ static void handle_define(ParsedState *pstate, sym_t mid, SynMacro *ma)
 	return;
 
 error:
-	throw &gEx;
+	throw &excep;
 }
 
 
-void handle_undef(ParsedState *pstate, const char *line)
+void handle_undef(InternalTables *pstate, const char *line)
 {
-	SynToken token;
+	ReadTokenOp rop(line);
 
-	ReadToken(pstate, &line, &token, &gEx, false);
+	ReadToken(pstate, &rop, false);
 	if( ! gv_preprocess_mode )
-		pstate->maLut.Put(token.id, SynMacro::NotDef);
+		pstate->maLut.Put(rop.token.id, SynMacro::NotDef);
 	else {
-		SynMacro *ma = pstate->maLut.Lookup(token.id);
+		SynMacro *ma = pstate->maLut.Lookup(rop.token.id);
 		if( IS_MACRO(ma) )
 			free(ma->parsed);
-		pstate->maLut.Remove(token.id);
+		pstate->maLut.Remove(rop.token.id);
 	}
 }
 

@@ -193,7 +193,7 @@ static bool create_file_writers(ParserContext *ctx)
 
 int main(int argc, char *argv[])
 {
-	ParsedState tcc_context, *pstate = &tcc_context;
+	InternalTables tcc_context, *pstate = &tcc_context;
 	size_t i;
 	ParserContext yctx;
 	char as_lc_char = 0;
@@ -259,7 +259,7 @@ int main(int argc, char *argv[])
 			yctx.as_lc_char = as_lc_char;
 
 		if( ! yc.DoFile(pstate, (size_t)-1, &file, &yctx))
-			fatal(120, "%s", yc.errmsg.c_str());
+			fatal(120, "%s", yc.GetError());
 		break;
 	}
 //	show_search_dirs(yctx); exit(2);

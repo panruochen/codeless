@@ -5,7 +5,7 @@
 #include <errno.h>
 
 #include <map>
-#include "ParsedState.h"
+#include "InternalTables.h"
 
 typedef unsigned int ykey_t;
 typedef std::map<ykey_t,int>  II_MAP;

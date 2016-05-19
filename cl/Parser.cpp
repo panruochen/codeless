@@ -17,7 +17,7 @@
 #include "utils.h"
 #include "misc.h"
 
-static const char *tr_token(ParsedState *pstate, SynToken *tokp)
+static const char *tr_token(InternalTables *pstate, SynToken *tokp)
 {
 	if(tokp->attr == SynToken::TA_UINT ) {
 		tokp->name.format("%u", tokp->u32_val);
@@ -146,7 +146,7 @@ static inline bool operator != (const SynToken& a, uint32_t val)
 }
 
 
-static bool DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& result, ParsedState *pstate, Exception *ex)
+static bool DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& result, InternalTables *pstate, CC_STRING& emsg)
 {
 	if( gv_preprocess_mode ) {
 		if(opnd1.attr == SynToken::TA_IDENT) {
@@ -204,14 +204,14 @@ static bool DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& r
 		break;
 	case SSID_DIVISION:
 		if(opnd2.u32_val == 0) {
-			*ex = "divided by zero";
+			emsg = "divided by zero";
 			goto error;
 		}
 		result.u32_val = opnd1.u32_val / opnd2.u32_val;
 		break;
 	case SSID_PERCENT:
 		if(opnd2.u32_val == 0) {
-			*ex = "divided by zero";
+			emsg = "divided by zero";
 			goto error;
 		}
 		result.u32_val = opnd1.u32_val % opnd2.u32_val;
@@ -237,7 +237,7 @@ static bool DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& r
 		result.u32_val = opnd1.u32_val >> opnd2.u32_val;
 		break;
 	default:
-		ex->format("Invalid operator %s", TR(pstate,opr));
+		emsg.format("Invalid operator %s", TR(pstate,opr));
 		goto error;
 	}
 	return true;
@@ -248,8 +248,8 @@ error:
 	return false;
 }
 
-static bool DoCalculationOnStackTop(ParsedState *pstate, sym_t opr, CC_STACK<SynToken>& opnd_stack,
-	CC_STACK<sym_t>& opr_stack, Exception *excep)
+static bool DoCalculationOnStackTop(InternalTables *pstate, sym_t opr, CC_STACK<SynToken>& opnd_stack,
+	CC_STACK<sym_t>& opr_stack, CC_STRING& emsg)
 {
 	SynToken a, b;
 	SynToken result = { SSID_SYMBOL_X, SynToken::TA_UINT };
@@ -258,12 +258,12 @@ static bool DoCalculationOnStackTop(ParsedState *pstate, sym_t opr, CC_STACK<Syn
 		SynToken c;
 		sym_t tmp_opr = SSID_INVALID;
 		if(opnd_stack.size() < 3) {
-			*excep = "Not enough operands for `? :'";
+			emsg = "Not enough operands for `? :'";
 			return false;
 		}
 		opr_stack.pop(tmp_opr);
 		if(tmp_opr != SSID_QUESTION) {
-			*excep = "Invalid operator `:'";
+			emsg = "Invalid operator `:'";
 			return false;
 		}
 		opnd_stack.pop(c);
@@ -282,7 +282,7 @@ static bool DoCalculationOnStackTop(ParsedState *pstate, sym_t opr, CC_STACK<Syn
 			goto error_no_operands;
 		log(LOGV_DEBUG, "! %s\n", tr_token(pstate,&a));
 	}
-	if( ! DoCalculate(a, opr, b, result, pstate, excep) ) {
+	if( ! DoCalculate(a, opr, b, result, pstate, emsg) ) {
 		return false;
 	}
 done:
@@ -290,7 +290,7 @@ done:
 	return true;
 
 error_no_operands:
-	excep->format("Not enough operands for opeator '%s'", TR(pstate,opr));
+	emsg.format("Not enough operands for opeator '%s'", TR(pstate,opr));
 	return false;
 }
 
@@ -300,17 +300,19 @@ static bool is_opr(sym_t sym)
 }
 
 
-static int symbol_definition_check(ParsedState *pstate, const char *line, bool reverse, SynToken *result, Exception *excep)
+static int symbol_definition_check(InternalTables *pstate, const char *line, bool reverse, SynToken *result, CC_STRING& emsg)
 {
 	short attr = SynToken::TA_IDENT;
 	int retval = TSV_X;
-	SynToken token;
 	SynMacro *minfo;
 	const char *name = TR(pstate, SSID_SYMBOL_X);
+	ReadTokenOp rop(line);
 
-	if( ! ReadToken(pstate, &line, &token, excep, false) || excep->GetError() != NULL )
+	if( ReadToken(pstate, &rop, false) < 0 ) {
+		emsg = rop.error;
 		goto error;
-	minfo = pstate->maLut.Lookup(token.id);
+	}
+	minfo = pstate->maLut.Lookup(rop.token.id);
 	if( ! gv_preprocess_mode ) {
 		if(minfo == NULL) {
 			retval = TSV_X;
@@ -341,10 +343,9 @@ error:
 	return retval;
 }
 
-static int expression_evaluate(ParsedState *pstate, const char *line, Exception *excep)
+static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRING& emsg)
 {
 	static const char opp[] = { '<', '=', '>', 'X'};
-	const char *saved_line = line;
 	enum {
 		STAT_INIT,
 		STAT_OPR1,
@@ -362,7 +363,6 @@ static int expression_evaluate(ParsedState *pstate, const char *line, Exception 
 	const char *symbol = NULL;
 	LOG_VERB dml = LOGV_DEBUG;
 	CC_STRING expansion;
-	Exception ex2;
 
 	if(!gv_preprocess_mode) {
 		/*
@@ -379,32 +379,33 @@ static int expression_evaluate(ParsedState *pstate, const char *line, Exception 
 			return TSV_X;
 	}
 
-	skip_blanks(saved_line);
-
-	expansion = ExpandLine(pstate, false, line, excep);
-	if(excep->GetError() != NULL) {
+	expansion = ExpandLine(pstate, false, line, emsg);
+	if( !emsg.isnull() ) {
 		return TSV_X;
 	}
 
-	line = expansion.c_str();
+	ReadTokenOp rop(expansion.c_str());
+	SynToken& token = rop.token;
 	opr_stack.push(SSID_SHARP);
 	log(dml, "PUSH OPR: #\n");
 	sign = 0;
 	state = STAT_OPR1;
 	while(1) {
 		sym_t  opr;
-		SynToken  token;
-		const char *last_pos = line;
+		const char *last_pos = rop.cp;
+		int ret;
 
-		if( ! ReadToken(pstate, &line, &token, excep, false) )
+		ret = ReadToken(pstate, &rop, false);
+		if( ret == 0 )
 			break;
-		if( excep->GetError() != NULL )
+		else if( ret < 0 )
 			goto error;
+
 		if( token.attr == SynToken::TA_CHAR )
 			token.attr = SynToken::TA_INT;
 		if( sign != 0 ) {
 			if(token.attr != SynToken::TA_UINT && token.id != SSID_DEFINED) {
-				excep->format("%s following %c", TR(pstate,token.id), sign);
+				emsg.format("%s following %c", TR(pstate,token.id), sign);
 				goto error;
 			}
 			if(sign == '-') {
@@ -430,7 +431,7 @@ static int expression_evaluate(ParsedState *pstate, const char *line, Exception 
 			if(is_opr(token.id))
 				state = STAT_OPR1;
 			else {
-				*excep = "Adjacent operands";
+				emsg = "Adjacent operands";
 				goto error;
 			}
 			break;
@@ -453,8 +454,8 @@ static int expression_evaluate(ParsedState *pstate, const char *line, Exception 
 			if(token.id == SSID_LEFT_PARENTHESIS)
 				state = STAT_DEFINED1;
 			else if(token.attr == SynToken::TA_IDENT) {
-				symbol_definition_check(pstate, last_pos, false, &token, excep);
-				if(excep->GetError() != NULL)
+				symbol_definition_check(pstate, last_pos, false, &token, emsg);
+				if(!emsg.isnull())
 					goto error;
 				state = STAT_INIT;
 			}
@@ -464,21 +465,21 @@ static int expression_evaluate(ParsedState *pstate, const char *line, Exception 
 				state = STAT_DEFINED2;
 				symbol = last_pos;
 			} else {
-				*excep = "Syntax error: ";
+				emsg = "Syntax error: ";
 				goto error;
 			}
 			break;
 		case STAT_DEFINED2:
 			if(token.id == SSID_RIGHT_PARENTHESIS) {
-				symbol_definition_check(pstate, symbol, false, &token, excep);
-				if(excep->GetError() != NULL)
+				symbol_definition_check(pstate, symbol, false, &token, emsg);
+				if(!emsg.isnull())
 					goto error;
 				state = STAT_INIT;
 				opnd_stack.push(token);
 				opr = token.id;
 				goto next;
 			} else {
-				*excep = "Unmatched (";
+				emsg = "Unmatched (";
 				goto error;
 			}
 			break;
@@ -506,8 +507,7 @@ again:
 				break;
 			case _GT:
 				opr_stack.pop(opr0);
-				if( ! DoCalculationOnStackTop(pstate, opr0, opnd_stack, opr_stack, &ex2) ) {
-					*excep = ex2;
+				if( ! DoCalculationOnStackTop(pstate, opr0, opnd_stack, opr_stack, emsg) ) {
 					goto error;
 				}
 				goto again;
@@ -515,8 +515,8 @@ again:
 				opr_stack.push(opr);
 				break;
 			case _XX:
-				excep->format("Cannot compare \"%s\" and \"%s\"", TR(pstate,opr0), TR(pstate,opr));
-				log(LOGV_ERROR, "*ERROR* %s\n", excep->GetError());
+				emsg.format("Cannot compare \"%s\" and \"%s\"", TR(pstate,opr0), TR(pstate,opr));
+				log(LOGV_ERROR, "*ERROR* %s\n", emsg.c_str());
 				goto error;
 			}
 		} else {
@@ -539,37 +539,34 @@ again:
 		case _EQ:
 			break;
 		case _GT:
-			if( ! DoCalculationOnStackTop(pstate, opr0, opnd_stack, opr_stack, &ex2) ) {
-				*excep = ex2;
+			if( ! DoCalculationOnStackTop(pstate, opr0, opnd_stack, opr_stack, emsg) ) {
 				goto error;
 			}
 			break;
 		default:
 			log(LOGV_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
-			*excep = "[1] Bad expression";
+			emsg = "[1] Bad expression";
 			goto error;
 		}
 	} while( opr_stack.size() != 0 );
 
 	if( opnd_stack.size() != 1 ) {
 		log(LOGV_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
-		*excep = "[2] Bad expression";
+		emsg = "[2] Bad expression";
 		goto error;
 	}
 
 	if( opnd_stack.top().attr == SynToken::TA_IDENT ) {
 		if( gv_preprocess_mode ) {
-			*excep = ex2;
 			return TSV_0;
 		}
 		return TSV_X;
 	}
 	log(dml, "Numberic Value: %u\n", opnd_stack.top().i32_val);;
-	*excep = "";
 	return !!opnd_stack.top().i32_val;
 
 error:
-	log(LOGV_ERROR, "*Error* %s\n", excep->GetError());
+	log(LOGV_ERROR, "*Error* %s\n", emsg.c_str());
 	return gv_preprocess_mode ? TSV_0 : TSV_X;
 }
 
@@ -810,7 +807,7 @@ static CC_STRING MakeSemaName(const CC_STRING& filename)
 }
 
 
-void Parser::do_define(const char *line)
+bool Parser::do_define(const char *line)
 {
 	const char *p;
 	CC_STRING word;
@@ -818,6 +815,10 @@ void Parser::do_define(const char *line)
 
 	p = line;
 	skip_blanks(p);
+	if(*p == '\r' || *p == '\n' || *p == '\0') {
+		errmsg = "no macro name given in #define directive";
+		return false;
+	}
 	if( isalpha(*p) || *p == '_' ) {
 		word = *p++;
 		while( isalpha(*p) || *p == '_' || isdigit(*p) )
@@ -831,6 +832,7 @@ void Parser::do_define(const char *line)
 		pstate->maLut.Put(mid, ma);
 		assert(pstate->maLut.Lookup(mid) != NULL);
 	}
+	return true;
 }
 
 File *Parser::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf, bool& in_compiler_dir)
@@ -839,19 +841,19 @@ File *Parser::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf,
 	CC_STRING ifpath, itoken, iline;
 	File *retval = NULL;
 
-	iline = ExpandLine(pstate, true, line, &excep);
-	if(excep.GetError() != NULL)
+	iline = ExpandLine(pstate, true, line, errmsg);
+	if(!errmsg.isnull())
 		goto done;
 
 	itoken = GetIncludeFileName(iline, quoted);
 	iline.clear();
 	if( itoken.isnull() ) {
-		excep.format("Invalid include preprocessor: %s", pline.from.c_str());
+		errmsg.format("Invalid include preprocessor: %s", pline.from.c_str());
 		goto done;
 	}
 
 	if(!rtc->get_include_file_path(itoken, GetCurrentFileName(), quoted, preprocessor == SSID_SHARP_INCLUDE_NEXT, ifpath, &in_compiler_dir)) {
-		excep.format("Cannot find include file \"%s\"", itoken.c_str());
+		errmsg.format("Cannot find include file \"%s\"", itoken.c_str());
 		goto done;
 	}
 
@@ -881,7 +883,7 @@ bool Parser::do_include(sym_t preprocessor, const char *line, const char **outpu
 	if(file->Open()) {
 		PushIncludedFile(file, NULL, COUNT_OF(Parser::preprocessors), in_compiler_dir, conditionals.size());
 	} else {
-		excep.format("Cannot open `%s'", file->name.c_str());
+		errmsg.format("Cannot open `%s'", file->name.c_str());
 		return false;
 	}
 
@@ -920,22 +922,23 @@ bool Parser::SM_Run()
 	switch(pline.pp_id) {
 	case SSID_SHARP_IF:
 		if( superior_conditional_value(true) != TSV_0 )
-			result = (TRI_STATE) expression_evaluate(pstate, pos, &excep);
+			result = (TRI_STATE) expression_evaluate(pstate, pos, errmsg);
 		goto handle_if_branch;
 
 	case SSID_SHARP_IFNDEF:
 		if( superior_conditional_value(true) != TSV_0 )
-			result = (TRI_STATE) symbol_definition_check(pstate, pos, true, NULL, &excep);
+			result = (TRI_STATE) symbol_definition_check(pstate, pos, true, NULL, errmsg);
 		goto handle_if_branch;
 
 	case SSID_SHARP_IFDEF:
 		if( superior_conditional_value(true) != TSV_0 )
-			result = (TRI_STATE) symbol_definition_check(pstate, pos, false, NULL, &excep);
+			result = (TRI_STATE) symbol_definition_check(pstate, pos, false, NULL, errmsg);
 
 handle_if_branch:
 		if( result == TSV_X ) {
 			if( gv_preprocess_mode ) {
-				excep = "Error on processing conditional";
+				if(errmsg.isnull())
+					errmsg = "Error on processing conditional";
 				goto done;
 			}
 		}
@@ -960,7 +963,7 @@ handle_if_branch:
 			included_files.top()->add_elif(false);
 			goto done;
 		}
-		result = (TRI_STATE) expression_evaluate(pstate, pos, &excep);
+		result = (TRI_STATE) expression_evaluate(pstate, pos, errmsg);
 		if( gv_preprocess_mode && result == TSV_X)
 			goto done;
 
@@ -1007,7 +1010,7 @@ handle_if_branch:
 		if( ! upper_chain()->keep_endif() )
 			output = NULL;
 		if( conditionals.size() == 0 ) {
-			excep = "Unmatched #endif";
+			errmsg = "Unmatched #endif";
 			goto done;
 		}
 		conditionals.pop(c);
@@ -1022,7 +1025,8 @@ handle_if_branch:
 
 		switch(pline.pp_id) {
 		  case SSID_SHARP_DEFINE:
-			do_define(pos);
+			if(!do_define(pos))
+				goto error_out;
 			break;
 		  case SSID_SHARP_UNDEF:
 			handle_undef(pstate, pos);
@@ -1035,9 +1039,9 @@ handle_if_branch:
 		  default:
 			if(rtm_expand_macros) {
 				pos = pline.parsed.c_str();
-				expanded_line = ExpandLine(pstate, false, pos, &excep);
-				if(excep.GetError() != NULL)
-					return false;
+				expanded_line = ExpandLine(pstate, false, pos, errmsg);
+				if(!errmsg.isnull())
+					goto error_out;
 				expanded_line += '\n';
 				output = expanded_line.c_str();
 			}
@@ -1048,9 +1052,8 @@ print_and_exit:
 	if( out_fp != NULL && output != NULL )
 		fprintf(out_fp, "%s", output);
 done:
-
 	pline.comment_start = -1;
-	if(gv_preprocess_mode && excep.GetError()) {
+	if(gv_preprocess_mode && GetError()) {
 		IncludedFile *tmp;
 		CC_STRING pmsg, ts;
 		while(included_files.size() > 0) {
@@ -1058,14 +1061,18 @@ done:
 			ts.format("  %s:%u\n", tmp->ifile->name.c_str(), tmp->ifile->line);
 			pmsg += ts;
 		}
-		if( !pmsg.isnull() )
-			excep.AddPrefix(pmsg);
+		if( !pmsg.isnull() ) {
+			errmsg = pmsg + errmsg;
+		}
 	}
-	return gv_preprocess_mode ? (excep.GetError() == NULL) : true;
+	return gv_preprocess_mode ? (GetError() == NULL) : true;
+
+error_out:
+	return false;
 }
 
 
-void Parser::Reset(ParsedState *pstate, size_t num_preprocessors, ParserContext *ctx)
+void Parser::Reset(InternalTables *pstate, size_t num_preprocessors, ParserContext *ctx)
 {
 	this->num_preprocessors = num_preprocessors;
 	this->pstate                = pstate;
@@ -1077,7 +1084,7 @@ void Parser::Reset(ParsedState *pstate, size_t num_preprocessors, ParserContext 
 	pline.parsed.clear();
 	pline.comment_start = -1;
 	deptext.clear();
-	excep = "";
+	errmsg = "";
 	errmsg.clear();
 }
 
@@ -1354,7 +1361,7 @@ retry:
 			break;
 
 		case STAT_INVALID:
-			excep = "Invalid state";
+			errmsg = "Invalid state";
 			return -1;
 		}
 
@@ -1364,7 +1371,7 @@ retry:
 			break;
 	}
 	if(state != STAT_INIT && state != STAT_0) {
-		excep = "Syntax error";
+		errmsg = "Syntax error";
 		return -1;
 	}
 	file->offset = -foldcnt;
@@ -1380,7 +1387,7 @@ bool Parser::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np
 	bool in_compiler_dir;
 	for(size_t i = 0; i < ifiles.size(); i++) {
 		if(!rtc->get_include_file_path(ifiles[i], CC_STRING(""), true, false, path, &in_compiler_dir)) {
-			excep.format("Can not find include file \"%s\"", ifiles[i].c_str());
+			errmsg.format("Can not find include file \"%s\"", ifiles[i].c_str());
 			return false;
 		}
 		RealFile *file;
@@ -1388,7 +1395,7 @@ bool Parser::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np
 		file->SetFileName(path);
 
 		if( ! file->Open() ) {
-			excep.format("Can not open include file \"%s\"", ifiles[i].c_str());
+			errmsg.format("Can not open include file \"%s\"", ifiles[i].c_str());
 			return false;
 		}
 		PushIncludedFile(file, NULL, np, in_compiler_dir, conditionals.size());
@@ -1435,7 +1442,7 @@ bool Parser::RunEngine(size_t cond)
  *
  *  Returns a pointer to the error messages on failure, or nil on success.
  */
-bool Parser::DoFile(ParsedState *pstate, size_t num_preprocessors, File *infile, ParserContext *ctx)
+bool Parser::DoFile(InternalTables *pstate, size_t num_preprocessors, File *infile, ParserContext *ctx)
 {
 	bool ignored;
 	FILE *out_fp;
@@ -1456,7 +1463,7 @@ bool Parser::DoFile(ParsedState *pstate, size_t num_preprocessors, File *infile,
 		utb.modtime = stb.st_mtime;
 	}
 	if( ! infile->Open() ) {
-		excep.format("Cannot open \"%s\" for reading\n");
+		errmsg.format("Cannot open \"%s\" for reading\n");
 		return false;
 	}
 
@@ -1479,7 +1486,7 @@ bool Parser::DoFile(ParsedState *pstate, size_t num_preprocessors, File *infile,
 			strcpy(tmp_outfile, "@cl@-XXXXXX");
 			fd = mkstemp(tmp_outfile);
 			if( fd < 0 ) {
-				excep.format("Cannot open \"%s\" for writing\n", tmp_outfile);
+				errmsg.format("Cannot open \"%s\" for writing\n", tmp_outfile);
 				infile->Close();
 				return false;
 			}
@@ -1517,16 +1524,17 @@ bool Parser::DoFile(ParsedState *pstate, size_t num_preprocessors, File *infile,
 
 	SaveDepInfo(deptext);
 	if( conditionals.size() != 0 )
-		excep = "Unmatched #if";
+		errmsg = "Unmatched #if";
 	else
 		retval = true;
 
 error:
 	if(!retval) {
-		if(included_files.size() > 0)
-			errmsg.format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), pline.from.c_str(), excep.GetError());
-		else
-			errmsg = excep.GetError();
+		if(included_files.size() > 0) {
+			CC_STRING tmp;
+			tmp.format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), pline.from.c_str(), GetError());
+			errmsg = tmp;
+		}
 		IncludedFile *ilevel;
 		while(included_files.size() > 0) {
 			ilevel = PopIncludedFile();

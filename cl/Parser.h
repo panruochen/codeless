@@ -7,11 +7,10 @@
 #include "cc_string.h"
 #include "cc_array.h"
 #include "log.h"
-#include "ParsedState.h"
+#include "InternalTables.h"
 
 #include "base.h"
 #include "File.h"
-#include "Exception.h"
 #include "ParserContext.h"
 #include "FileWriter.h"
 
@@ -225,10 +224,10 @@ protected:
 	inline IncludedFile *PopIncludedFile();
 
 	/*-------------------------------------------------------------*/
-	ParsedState   *pstate;
+	InternalTables   *pstate;
 
 	CC_STRING      deptext;
-	Exception     excep;
+	CC_STRING errmsg;
 
 	struct ParsedLine {
 		ssize_t comment_start;
@@ -241,10 +240,10 @@ protected:
 	ParsedLine pline;
 
 	CC_STRING  do_elif(int mode);
-	void       do_define(const char *line);
+	bool       do_define(const char *line);
 	bool       do_include(sym_t preprocess, const char *line, const char **output);
 
-	void   Reset(ParsedState *pstate, size_t num_preprocessors, ParserContext *ctx);
+	void   Reset(InternalTables *pstate, size_t num_preprocessors, ParserContext *ctx);
 	sym_t  GetPreprocessor(const char *line, const char **pos);
 	int    ReadLine();
 	bool   SM_Run();
@@ -263,9 +262,9 @@ protected:
 	void SaveCondValInfo(const CC_STRING& s);
 
 public:
-	CC_STRING errmsg;
 	inline Parser();
-	bool DoFile(ParsedState *pstate, size_t num_preprocessors, File  *infile, ParserContext *cp_ctx);
+	inline const char *GetError();
+	bool DoFile(InternalTables *pstate, size_t num_preprocessors, File  *infile, ParserContext *cp_ctx);
 };
 
 

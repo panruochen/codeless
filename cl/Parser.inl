@@ -28,6 +28,11 @@ inline bool Parser::has_dep_file(void)
 	return rtc && !rtc->of_array[MSGT_DEP].isnull();
 }
 
+inline const char *Parser::GetError()
+{
+	return errmsg.c_str();
+}
+
 inline Parser::CConditionalChain::CConditionalChain()
 {
 	value = TSV_X;
