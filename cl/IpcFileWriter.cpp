@@ -22,17 +22,17 @@
 #define ALOG(fmt,args...)  do{}while(0)
 #endif
 
-const char *DsFileWriter::svr_addr;
-const char *DsFileWriter::cli_addr;
-int DsFileWriter::svr_fd = -1;
-unsigned int DsFileWriter::ref_count;
+const char *IpcFileWriter::svr_addr;
+const char *IpcFileWriter::cli_addr;
+int IpcFileWriter::svr_fd = -1;
+unsigned int IpcFileWriter::ref_count;
 
 
 /*
  * Create a client endpoint and connect to a server.
  * Returns fd if all OK, <0 on error.
  */
-int DsFileWriter::Connect(const char *rtdir, const char *saddr)
+int IpcFileWriter::Connect(const char *rtdir, const char *saddr)
 {
 	int fd = -1, len, saved_errno;
 	struct sockaddr_un saddr_un;
@@ -86,7 +86,7 @@ errout:
 
 #define WRITE_CHECKED(fd,buf,n) do { ret = write(fd,buf,n); if(ret!=(n)){retval = -1; goto write_fail;} } while(0)
 
-ssize_t DsFileWriter::Write(const void *buf, size_t count)
+ssize_t IpcFileWriter::Write(const void *buf, size_t count)
 {
 	int ret;
 	const size_t chunksize = 0x10000;
@@ -138,12 +138,12 @@ write_fail:
 	return retval;
 }
 
-DsFileWriter::DsFileWriter(int mtype_)
+IpcFileWriter::IpcFileWriter(int mtype_)
 {
 	id = mtype_;
 }
 
-DsFileWriter::~DsFileWriter()
+IpcFileWriter::~IpcFileWriter()
 {
 	if(ref_count == 0)
 		exit(EINVAL);

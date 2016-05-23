@@ -34,7 +34,7 @@ do {                               \
 #define COUNT_OF(a)  (sizeof(a) / sizeof(a[0]))
 #endif
 
-#define TR(pstate,opr)   pstate->syLut.TrId(opr).c_str()
+#define TR(intab,opr)   intab->syLut.TrId(opr).c_str()
 #define TOKEN_NAME(a)    (a).name.c_str()
 
 #define CB_BEGIN     {

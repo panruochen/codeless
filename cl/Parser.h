@@ -224,7 +224,7 @@ protected:
 	inline IncludedFile *PopIncludedFile();
 
 	/*-------------------------------------------------------------*/
-	InternalTables   *pstate;
+	InternalTables   *intab;
 
 	CC_STRING      deptext;
 	CC_STRING errmsg;
@@ -243,7 +243,7 @@ protected:
 	bool       do_define(const char *line);
 	bool       do_include(sym_t preprocess, const char *line, const char **output);
 
-	void   Reset(InternalTables *pstate, size_t num_preprocessors, ParserContext *ctx);
+	void   Reset(InternalTables *intab, size_t num_preprocessors, ParserContext *ctx);
 	sym_t  GetPreprocessor(const char *line, const char **pos);
 	int    ReadLine();
 	bool   SM_Run();
@@ -261,10 +261,16 @@ protected:
 	void SaveDepInfo(const CC_STRING& s);
 	void SaveCondValInfo(const CC_STRING& s);
 
+	const char *TransToken(SynToken *tokp);
+	int Compute(const char *line);
+	int CheckSymbolDefined(const char *line, bool reverse, SynToken *result);
+	bool CalculateOnStackTop(sym_t opr, CC_STACK<SynToken>& opnd_stack, CC_STACK<sym_t>& opr_stack);
+	bool DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& result);
+
 public:
 	inline Parser();
 	inline const char *GetError();
-	bool DoFile(InternalTables *pstate, size_t num_preprocessors, File  *infile, ParserContext *cp_ctx);
+	bool DoFile(InternalTables *intab, size_t num_preprocessors, File  *infile, ParserContext *cp_ctx);
 };
 
 

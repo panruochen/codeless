@@ -147,7 +147,7 @@ inline void Parser::mark_comment_start()
 
 inline Parser::Parser()
 {
-	pstate = NULL;
+	intab = NULL;
 }
 
 inline void Parser::IncludedFile::Cond::append(CondChain *cc)

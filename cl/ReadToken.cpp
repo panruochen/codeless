@@ -31,21 +31,19 @@ static CC_STRING get_format(const CC_STRING& s, CC_STRING& error)
 	return fmt;
 }
 
-#define ishexdigit(c)  (isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
-
-static SynToken new_token(InternalTables *pstate, const CC_STRING& name, short attr = SynToken::TA_OPR)
+static SynToken new_token(InternalTables *intab, const CC_STRING& name, short attr = SynToken::TA_OPR)
 {
 	SynToken token;
 
-	token.id   = pstate->syLut.Put(name);
+	token.id   = intab->syLut.Put(name);
 	token.attr = attr;
     token.name = name;
 	return token;
 }
 
-static void new_number(InternalTables *pstate, SynToken &token, const CC_STRING& name, int base, const CC_STRING& format)
+static void new_number(InternalTables *intab, SynToken &token, const CC_STRING& name, int base, const CC_STRING& format)
 {
-	token.id     = pstate->syLut.Put(name);
+	token.id     = intab->syLut.Put(name);
 	token.attr   = SynToken::TA_UINT;
 	sscanf(name.c_str(), format.c_str(), &token.u32_val);
     token.name = name;
@@ -53,20 +51,20 @@ static void new_number(InternalTables *pstate, SynToken &token, const CC_STRING&
 
 #define GET_OPERATOR()                       do{ \
     if(cword.size() > 0)                         \
-        token = new_token(pstate, cword);            \
+        token = new_token(intab, cword);            \
     if(cword.size() == 2)                        \
         p++;                                     \
     goto done;                                   \
 } while(0)
 
 #define GET_NUMBER(base,format)              do{ \
-	new_number(pstate, token, cword, base, format);  \
+	new_number(intab, token, cword, base, format);  \
     goto done;                                   \
 } while(0)
 
 #define GET_FORMAT(fmt)                  do { \
-	format = get_format(fmt,rop->error);      \
-	if(!rop->error.isnull())                  \
+	format = get_format(fmt,req->error);      \
+	if(!req->error.isnull())                  \
 	    goto error;                           \
 } while(0)
 
@@ -74,7 +72,7 @@ static void new_number(InternalTables *pstate, SynToken &token, const CC_STRING&
 /**
  * Get one token from the input line and then move the read pointer forward.
  **/
-int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
+int ReadToken(InternalTables *intab, ReadReq *req, bool for_include)
 {
 	CC_STRING e_msg;
 	enum {
@@ -106,7 +104,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 	} state;
 	int retval = -1;
 	CC_STRING cword;
-	SynToken& token = rop->token;
+	SynToken& token = req->token;
 	char c;
 	char quation = 0;
 	const char *p;
@@ -117,7 +115,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 	/* Initialize */
 	state = SM_STATE_INITIAL;
 	char_val = -1;
-	p = rop->cp;
+	p = req->cp;
 	skip_blanks(p);
 	if(*p == '\n' || *p == '\0')
 		return false;
@@ -189,7 +187,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 			case ':':
 			case ',':
 				cword = c;
-				token = new_token(pstate, cword);
+				token = new_token(intab, cword);
 				p++;
 				goto done;
 			default:
@@ -201,7 +199,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 					state = SM_STATE_IDENTIFIER;
 				} else {
 					cword = c;
-		               token = new_token(pstate, cword);
+		               token = new_token(intab, cword);
 					p++;
 					goto done;
 				}
@@ -215,7 +213,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 			else if(c == '"' || c == '\'') {
 				goto got_string;
 			} else {
-				token = new_token(pstate, cword, SynToken::TA_IDENT);
+				token = new_token(intab, cword, SynToken::TA_IDENT);
 				goto done;
 			}
 			break;
@@ -230,7 +228,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 			} else if(c == '8' || c == '9') {
 				e_msg  = "Invalid number: ";
 				e_msg += c;
-				rop->error = e_msg;
+				req->error = e_msg;
 				goto error;
 			} else
 				GET_NUMBER(10,"%u");
@@ -244,17 +242,17 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 			break;
 
 		case SM_STATE_0X:
-			if( ishexdigit(c) ) {
+			if( isxdigit(c) ) {
 				cword += c;
 				state = SM_STATE_HEX_NUM;
 			} else {
-				rop->error = "Invalid token 0x";
+				req->error = "Invalid token 0x";
 				goto error;
 			}
 			break;
 
 		case SM_STATE_HEX_NUM:
-			if( ishexdigit(c) )
+			if( isxdigit(c) )
 				cword += c;
 			else if(c == 'u' || c == 'U') {
 				base = 16;
@@ -353,7 +351,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 
 		case SM_STATE_ADDITION:
 			if(c == '+') {
-				rop->error = "Invalid ++ operator";
+				req->error = "Invalid ++ operator";
 				goto error;
 			} else {
 				GET_OPERATOR();
@@ -362,7 +360,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 
 		case SM_STATE_SUBTRACTION:
 			if(c == '-') {
-				rop->error = "Invalid -- operator";
+				req->error = "Invalid -- operator";
 				goto error;
 			} else {
 				GET_OPERATOR();
@@ -380,7 +378,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 			switch( quation ) {
 			case '"':
 				if(c == '"') {
-					token = new_token(pstate, cword, SynToken::TA_STR);
+					token = new_token(intab, cword, SynToken::TA_STR);
 					p++;
 					goto done;
 				} else if(c == '\\')
@@ -388,7 +386,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 				break;
 			case '\'':
 				if(c == '\'') {
-					token = new_token(pstate, cword, SynToken::TA_CHAR);
+					token = new_token(intab, cword, SynToken::TA_CHAR);
 					token.i32_val = char_val;
 					p++;
 					goto done;
@@ -416,7 +414,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 
 		case SM_STATE_STR_HEX:
 			cword += c;
-			if( ! ishexdigit(c) )
+			if( ! isxdigit(c) )
 				state = SM_STATE_STRING;
 			break;
 
@@ -430,13 +428,13 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 
 		case SM_STATE_DOT2:
 			cword += c;
-			token = new_token(pstate, cword);
+			token = new_token(intab, cword);
 			p++;
 			goto done;
 		}
 		if(c == '\0') {
 			if(state == SM_STATE_STRING || state == SM_STATE_STR_ESC || state == SM_STATE_STR_HEX) {
-				rop->error = "Unterminated string";
+				req->error = "Unterminated string";
 				goto error;
 			}
 			break;
@@ -444,7 +442,7 @@ int ReadToken(InternalTables *pstate, ReadTokenOp *rop, bool for_include)
 	}
 
 done:
-	rop->cp = p;
+	req->cp = p;
 	retval = true;
 
 error:

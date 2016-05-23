@@ -17,19 +17,12 @@
 #include "utils.h"
 #include "misc.h"
 
-static const char *tr_token(InternalTables *pstate, SynToken *tokp)
+static bool IsOperator(sym_t sym)
 {
-	if(tokp->attr == SynToken::TA_UINT ) {
-		tokp->name.format("%u", tokp->u32_val);
-		return tokp->name.c_str();
-	} else if(tokp->attr == SynToken::TA_INT ) {
-		tokp->name.format("%d", tokp->u32_val);
-		return tokp->name.c_str();
-	}
-	return TR(pstate, tokp->id);
+	return sym < SSID_SYMBOL_X;
 }
 
-static bool check_prev_operator(sym_t id)
+static bool CheckPrevOperator(sym_t id)
 {
 	switch(id) {
 	case  SSID_LOGIC_OR:
@@ -145,8 +138,19 @@ static inline bool operator != (const SynToken& a, uint32_t val)
 	return a.u32_val != val;
 }
 
+const char *Parser::TransToken(SynToken *tokp)
+{
+	if(tokp->attr == SynToken::TA_UINT ) {
+		tokp->name.format("%u", tokp->u32_val);
+		return tokp->name.c_str();
+	} else if(tokp->attr == SynToken::TA_INT ) {
+		tokp->name.format("%d", tokp->u32_val);
+		return tokp->name.c_str();
+	}
+	return TR(intab, tokp->id);
+}
 
-static bool DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& result, InternalTables *pstate, CC_STRING& emsg)
+bool Parser::DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& result)
 {
 	if( gv_preprocess_mode ) {
 		if(opnd1.attr == SynToken::TA_IDENT) {
@@ -204,14 +208,14 @@ static bool DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& r
 		break;
 	case SSID_DIVISION:
 		if(opnd2.u32_val == 0) {
-			emsg = "divided by zero";
+			errmsg = "divided by zero";
 			goto error;
 		}
 		result.u32_val = opnd1.u32_val / opnd2.u32_val;
 		break;
 	case SSID_PERCENT:
 		if(opnd2.u32_val == 0) {
-			emsg = "divided by zero";
+			errmsg = "divided by zero";
 			goto error;
 		}
 		result.u32_val = opnd1.u32_val % opnd2.u32_val;
@@ -237,7 +241,7 @@ static bool DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& r
 		result.u32_val = opnd1.u32_val >> opnd2.u32_val;
 		break;
 	default:
-		emsg.format("Invalid operator %s", TR(pstate,opr));
+		errmsg.format("Invalid operator %s", TR(intab,opr));
 		goto error;
 	}
 	return true;
@@ -248,8 +252,7 @@ error:
 	return false;
 }
 
-static bool DoCalculationOnStackTop(InternalTables *pstate, sym_t opr, CC_STACK<SynToken>& opnd_stack,
-	CC_STACK<sym_t>& opr_stack, CC_STRING& emsg)
+bool Parser::CalculateOnStackTop(sym_t opr, CC_STACK<SynToken>& opnd_stack, CC_STACK<sym_t>& opr_stack)
 {
 	SynToken a, b;
 	SynToken result = { SSID_SYMBOL_X, SynToken::TA_UINT };
@@ -258,31 +261,31 @@ static bool DoCalculationOnStackTop(InternalTables *pstate, sym_t opr, CC_STACK<
 		SynToken c;
 		sym_t tmp_opr = SSID_INVALID;
 		if(opnd_stack.size() < 3) {
-			emsg = "Not enough operands for `? :'";
+			errmsg = "Not enough operands for `? :'";
 			return false;
 		}
 		opr_stack.pop(tmp_opr);
 		if(tmp_opr != SSID_QUESTION) {
-			emsg = "Invalid operator `:'";
+			errmsg = "Invalid operator `:'";
 			return false;
 		}
 		opnd_stack.pop(c);
 		opnd_stack.pop(b);
 		opnd_stack.pop(a);
 
-		log(LOGV_DEBUG, "%s ? %s : %s\n", tr_token(pstate,&a), tr_token(pstate,&b), tr_token(pstate,&c));
+		log(LOGV_DEBUG, "%s ? %s : %s\n", TransToken(&a), TransToken(&b), TransToken(&c));
 		result = a.u32_val ? b : c;
 		goto done;
 	} else if( opr != SSID_LOGIC_NOT && opr != SSID_BITWISE_NOT ) {
 		if( ! opnd_stack.pop(b) || ! opnd_stack.pop(a))
 			goto error_no_operands;
-		log(LOGV_DEBUG, "%s %s %s\n", tr_token(pstate,&a), TR(pstate,opr), tr_token(pstate,&b));
+		log(LOGV_DEBUG, "%s %s %s\n", TransToken(&a), TR(intab,opr), TransToken(&b));
 	} else {
 		if( ! opnd_stack.pop(a) )
 			goto error_no_operands;
-		log(LOGV_DEBUG, "! %s\n", tr_token(pstate,&a));
+		log(LOGV_DEBUG, "! %s\n", TransToken(&a));
 	}
-	if( ! DoCalculate(a, opr, b, result, pstate, emsg) ) {
+	if( ! DoCalculate(a, opr, b, result) ) {
 		return false;
 	}
 done:
@@ -290,29 +293,23 @@ done:
 	return true;
 
 error_no_operands:
-	emsg.format("Not enough operands for opeator '%s'", TR(pstate,opr));
+	errmsg.format("Not enough operands for opeator '%s'", TR(intab,opr));
 	return false;
 }
 
-static bool is_opr(sym_t sym)
-{
-	return sym < SSID_SYMBOL_X;
-}
-
-
-static int symbol_definition_check(InternalTables *pstate, const char *line, bool reverse, SynToken *result, CC_STRING& emsg)
+int Parser::CheckSymbolDefined(const char *line, bool reverse, SynToken *result)
 {
 	short attr = SynToken::TA_IDENT;
 	int retval = TSV_X;
 	SynMacro *minfo;
-	const char *name = TR(pstate, SSID_SYMBOL_X);
-	ReadTokenOp rop(line);
+	const char *name = TR(intab, SSID_SYMBOL_X);
+	ReadReq req(line);
 
-	if( ReadToken(pstate, &rop, false) < 0 ) {
-		emsg = rop.error;
+	if( ReadToken(intab, &req, false) < 0 ) {
+		errmsg = req.error;
 		goto error;
 	}
-	minfo = pstate->maLut.Lookup(rop.token.id);
+	minfo = intab->maLut.Lookup(req.token.id);
 	if( ! gv_preprocess_mode ) {
 		if(minfo == NULL) {
 			retval = TSV_X;
@@ -343,7 +340,7 @@ error:
 	return retval;
 }
 
-static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRING& emsg)
+int Parser::Compute(const char *line)
 {
 	static const char opp[] = { '<', '=', '>', 'X'};
 	enum {
@@ -379,23 +376,23 @@ static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRI
 			return TSV_X;
 	}
 
-	expansion = ExpandLine(pstate, false, line, emsg);
-	if( !emsg.isnull() ) {
+	expansion = ExpandLine(intab, false, line, errmsg);
+	if( !errmsg.isnull() ) {
 		return TSV_X;
 	}
 
-	ReadTokenOp rop(expansion.c_str());
-	SynToken& token = rop.token;
+	ReadReq req(expansion.c_str());
+	SynToken& token = req.token;
 	opr_stack.push(SSID_SHARP);
 	log(dml, "PUSH OPR: #\n");
 	sign = 0;
 	state = STAT_OPR1;
 	while(1) {
 		sym_t  opr;
-		const char *last_pos = rop.cp;
+		const char *last_pos = req.cp;
 		int ret;
 
-		ret = ReadToken(pstate, &rop, false);
+		ret = ReadToken(intab, &req, false);
 		if( ret == 0 )
 			break;
 		else if( ret < 0 )
@@ -405,7 +402,7 @@ static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRI
 			token.attr = SynToken::TA_INT;
 		if( sign != 0 ) {
 			if(token.attr != SynToken::TA_UINT && token.id != SSID_DEFINED) {
-				emsg.format("%s following %c", TR(pstate,token.id), sign);
+				errmsg.format("%s following %c", TR(intab,token.id), sign);
 				goto error;
 			}
 			if(sign == '-') {
@@ -413,14 +410,14 @@ static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRI
 				token.i32_val = -token.i32_val;
 			}
 			sign = 0;
-		} else if( (token.id == SSID_ADDITION || token.id == SSID_SUBTRACTION) &&  check_prev_operator(last_opr)) {
+		} else if( (token.id == SSID_ADDITION || token.id == SSID_SUBTRACTION) &&  CheckPrevOperator(last_opr)) {
 			sign = token.id == SSID_ADDITION ? '+' : '-';
 			goto next;
 		}
 
 		switch(state) {
 		case STAT_INIT:
-			if(is_opr(token.id))
+			if(IsOperator(token.id))
 				state = STAT_OPR1;
 			else if(token.id == SSID_DEFINED)
 				state = STAT_DEFINED;
@@ -428,15 +425,15 @@ static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRI
 				state = STAT_OPND;
 			break;
 		case STAT_OPND:
-			if(is_opr(token.id))
+			if(IsOperator(token.id))
 				state = STAT_OPR1;
 			else {
-				emsg = "Adjacent operands";
+				errmsg = "Adjacent operands";
 				goto error;
 			}
 			break;
 		case STAT_OPR1:
-			if(is_opr(token.id))
+			if(IsOperator(token.id))
 				state = STAT_OPR2;
 			else if(token.id == SSID_DEFINED)
 				state = STAT_DEFINED;
@@ -444,7 +441,7 @@ static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRI
 				state= STAT_INIT;
 			break;
 		case STAT_OPR2:
-			if(is_opr(token.id)) {
+			if(IsOperator(token.id)) {
 			} else if(token.id == SSID_DEFINED)
 				state = STAT_DEFINED;
 			else
@@ -454,8 +451,8 @@ static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRI
 			if(token.id == SSID_LEFT_PARENTHESIS)
 				state = STAT_DEFINED1;
 			else if(token.attr == SynToken::TA_IDENT) {
-				symbol_definition_check(pstate, last_pos, false, &token, emsg);
-				if(!emsg.isnull())
+				CheckSymbolDefined(last_pos, false, &token);
+				if(!errmsg.isnull())
 					goto error;
 				state = STAT_INIT;
 			}
@@ -465,21 +462,21 @@ static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRI
 				state = STAT_DEFINED2;
 				symbol = last_pos;
 			} else {
-				emsg = "Syntax error: ";
+				errmsg = "Syntax error: ";
 				goto error;
 			}
 			break;
 		case STAT_DEFINED2:
 			if(token.id == SSID_RIGHT_PARENTHESIS) {
-				symbol_definition_check(pstate, symbol, false, &token, emsg);
-				if(!emsg.isnull())
+				CheckSymbolDefined(symbol, false, &token);
+				if(!errmsg.isnull())
 					goto error;
 				state = STAT_INIT;
 				opnd_stack.push(token);
 				opr = token.id;
 				goto next;
 			} else {
-				emsg = "Unmatched (";
+				errmsg = "Unmatched (";
 				goto error;
 			}
 			break;
@@ -490,24 +487,24 @@ static int expression_evaluate(InternalTables *pstate, const char *line, CC_STRI
 		if( token.id == SynToken::TA_UINT || token.id == SynToken::TA_INT )
 			log(dml, "Current: %u\n", token.u32_val);
 		else
-			log(dml, "Current: %s\n", TR(pstate,token.id));
+			log(dml, "Current: %s\n", TR(intab,token.id));
 //		log(dml, "OPR  Stack: \n", opr_stack);
 //		log(dml, "OPND Stack: \n", opnd_stack);
 		opr = token.id;
-		if( is_opr(opr) ) {
+		if( IsOperator(opr) ) {
 			sym_t opr0;
 			int result;
 again:
 			opr0 = opr_stack.top();
-			result = pstate->opMat.Compare(opr0, opr);
-			log(dml, "Compare: %s %c %s\n", TR(pstate,opr0),opp[1+result],TR(pstate,opr));
+			result = intab->opMat.Compare(opr0, opr);
+			log(dml, "Compare: %s %c %s\n", TR(intab,opr0),opp[1+result],TR(intab,opr));
 			switch(result) {
 			case _EQ:
 				opr_stack.pop(opr0);
 				break;
 			case _GT:
 				opr_stack.pop(opr0);
-				if( ! DoCalculationOnStackTop(pstate, opr0, opnd_stack, opr_stack, emsg) ) {
+				if( ! CalculateOnStackTop(opr0, opnd_stack, opr_stack) ) {
 					goto error;
 				}
 				goto again;
@@ -515,8 +512,8 @@ again:
 				opr_stack.push(opr);
 				break;
 			case _XX:
-				emsg.format("Cannot compare \"%s\" and \"%s\"", TR(pstate,opr0), TR(pstate,opr));
-				log(LOGV_ERROR, "*ERROR* %s\n", emsg.c_str());
+				errmsg.format("Cannot compare \"%s\" and \"%s\"", TR(intab,opr0), TR(intab,opr));
+				log(LOGV_ERROR, "*ERROR* %s\n", errmsg.c_str());
 				goto error;
 			}
 		} else {
@@ -533,26 +530,26 @@ again:
 
 		if( ! opr_stack.pop(opr0) )
 			goto error;
-		result = pstate->opMat.Compare(opr0, SSID_SHARP);
-		log(dml, "Compare: %s %c #\n", TR(pstate,opr0),opp[result]);
+		result = intab->opMat.Compare(opr0, SSID_SHARP);
+		log(dml, "Compare: %s %c #\n", TR(intab,opr0),opp[result]);
 		switch(result) {
 		case _EQ:
 			break;
 		case _GT:
-			if( ! DoCalculationOnStackTop(pstate, opr0, opnd_stack, opr_stack, emsg) ) {
+			if( ! CalculateOnStackTop(opr0, opnd_stack, opr_stack) ) {
 				goto error;
 			}
 			break;
 		default:
 			log(LOGV_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
-			emsg = "[1] Bad expression";
+			errmsg = "[1] Bad expression";
 			goto error;
 		}
 	} while( opr_stack.size() != 0 );
 
 	if( opnd_stack.size() != 1 ) {
 		log(LOGV_ERROR, "%s:%u: Bad expression\n", __func__,  __LINE__);
-		emsg = "[2] Bad expression";
+		errmsg = "[2] Bad expression";
 		goto error;
 	}
 
@@ -566,7 +563,7 @@ again:
 	return !!opnd_stack.top().i32_val;
 
 error:
-	log(LOGV_ERROR, "*Error* %s\n", emsg.c_str());
+	log(LOGV_ERROR, "*Error* %s\n", errmsg.c_str());
 	return gv_preprocess_mode ? TSV_0 : TSV_X;
 }
 
@@ -823,14 +820,14 @@ bool Parser::do_define(const char *line)
 		word = *p++;
 		while( isalpha(*p) || *p == '_' || isdigit(*p) )
 			word += *p++;
-		mid = pstate->syLut.Put(word);
+		mid = intab->syLut.Put(word);
 		SynMacro *ma  = (SynMacro*) malloc(sizeof(*ma));
 		ma->id      = SSID_INVALID;
 		ma->line    = strdup(line);
 		ma->parsed  = NULL;
 		ma->va_args = false;
-		pstate->maLut.Put(mid, ma);
-		assert(pstate->maLut.Lookup(mid) != NULL);
+		intab->maLut.Put(mid, ma);
+		assert(intab->maLut.Lookup(mid) != NULL);
 	}
 	return true;
 }
@@ -841,7 +838,7 @@ File *Parser::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf,
 	CC_STRING ifpath, itoken, iline;
 	File *retval = NULL;
 
-	iline = ExpandLine(pstate, true, line, errmsg);
+	iline = ExpandLine(intab, true, line, errmsg);
 	if(!errmsg.isnull())
 		goto done;
 
@@ -922,17 +919,17 @@ bool Parser::SM_Run()
 	switch(pline.pp_id) {
 	case SSID_SHARP_IF:
 		if( superior_conditional_value(true) != TSV_0 )
-			result = (TRI_STATE) expression_evaluate(pstate, pos, errmsg);
+			result = (TRI_STATE) Compute(pos);
 		goto handle_if_branch;
 
 	case SSID_SHARP_IFNDEF:
 		if( superior_conditional_value(true) != TSV_0 )
-			result = (TRI_STATE) symbol_definition_check(pstate, pos, true, NULL, errmsg);
+			result = (TRI_STATE) CheckSymbolDefined(pos, true, NULL);
 		goto handle_if_branch;
 
 	case SSID_SHARP_IFDEF:
 		if( superior_conditional_value(true) != TSV_0 )
-			result = (TRI_STATE) symbol_definition_check(pstate, pos, false, NULL, errmsg);
+			result = (TRI_STATE) CheckSymbolDefined(pos, false, NULL);
 
 handle_if_branch:
 		if( result == TSV_X ) {
@@ -963,7 +960,7 @@ handle_if_branch:
 			included_files.top()->add_elif(false);
 			goto done;
 		}
-		result = (TRI_STATE) expression_evaluate(pstate, pos, errmsg);
+		result = (TRI_STATE) Compute(pos);
 		if( gv_preprocess_mode && result == TSV_X)
 			goto done;
 
@@ -1029,7 +1026,7 @@ handle_if_branch:
 				goto error_out;
 			break;
 		  case SSID_SHARP_UNDEF:
-			handle_undef(pstate, pos);
+			handle_undef(intab, pos);
 			break;
 		  case SSID_SHARP_INCLUDE:
 		  case SSID_SHARP_INCLUDE_NEXT:
@@ -1039,7 +1036,7 @@ handle_if_branch:
 		  default:
 			if(rtm_expand_macros) {
 				pos = pline.parsed.c_str();
-				expanded_line = ExpandLine(pstate, false, pos, errmsg);
+				expanded_line = ExpandLine(intab, false, pos, errmsg);
 				if(!errmsg.isnull())
 					goto error_out;
 				expanded_line += '\n';
@@ -1072,10 +1069,10 @@ error_out:
 }
 
 
-void Parser::Reset(InternalTables *pstate, size_t num_preprocessors, ParserContext *ctx)
+void Parser::Reset(InternalTables *intab, size_t num_preprocessors, ParserContext *ctx)
 {
 	this->num_preprocessors = num_preprocessors;
-	this->pstate                = pstate;
+	this->intab                = intab;
 	this->rtc             = ctx;
 
 	assert(included_files.size() == 0);
@@ -1123,7 +1120,7 @@ sym_t Parser::GetPreprocessor(const char *line, const char **pos)
 	*pos = p;
 	for(size_t i = 0; i < num_preprocessors; i++)
 		if( word == preprocessors[i] )
-			return pstate->syLut.Put(preprocessors[i]);
+			return intab->syLut.Put(preprocessors[i]);
 	return SSID_INVALID;
 }
 
@@ -1351,7 +1348,7 @@ retry:
 			else {
 				for(size_t i = 0; i < num_preprocessors; i++)
 					if(preprocessors[i] == directive) {
-						pline.pp_id = pstate->syLut.Put(preprocessors[i]);
+						pline.pp_id = intab->syLut.Put(preprocessors[i]);
 						pline.content = line.size();
 						state = STAT_0;
 						break;
@@ -1442,7 +1439,7 @@ bool Parser::RunEngine(size_t cond)
  *
  *  Returns a pointer to the error messages on failure, or nil on success.
  */
-bool Parser::DoFile(InternalTables *pstate, size_t num_preprocessors, File *infile, ParserContext *ctx)
+bool Parser::DoFile(InternalTables *intab, size_t num_preprocessors, File *infile, ParserContext *ctx)
 {
 	bool ignored;
 	FILE *out_fp;
@@ -1507,7 +1504,7 @@ bool Parser::DoFile(InternalTables *pstate, size_t num_preprocessors, File *infi
 
 	if( num_preprocessors >= COUNT_OF(Parser::preprocessors) )
 		num_preprocessors  = COUNT_OF(Parser::preprocessors);
-	Reset(pstate, num_preprocessors, ctx);
+	Reset(intab, num_preprocessors, ctx);
 
 	if(has_dep_file())
 		AddDependency("", infile->name);

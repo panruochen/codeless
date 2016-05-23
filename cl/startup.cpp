@@ -174,9 +174,9 @@ static bool create_file_writers(ParserContext *ctx)
 		if(ctx->of_array[i].isnull())
 			continue;
 		if(ctx->server_addr.isnull() || getenv("CL_FORCE_LOCAL_WRITE") )
-			gvar_file_writers[i] = new OsFileWriter(i, ctx->of_array[i]);
+			gvar_file_writers[i] = new LocalFileWriter(i, ctx->of_array[i]);
 		else {
-			DsFileWriter *fw = new DsFileWriter(i);
+			IpcFileWriter *fw = new IpcFileWriter(i);
 			if( fw->Connect(ctx->runtime_dir.isnull() ? DEF_RT_DIR : ctx->runtime_dir.c_str(), ctx->server_addr.c_str()) < 0 ) {
 				const int t = i;
 				for(i = 0; i < MSGT_MAX; i++)
@@ -193,7 +193,7 @@ static bool create_file_writers(ParserContext *ctx)
 
 int main(int argc, char *argv[])
 {
-	InternalTables tcc_context, *pstate = &tcc_context;
+	InternalTables tcc_context, *intab = &tcc_context;
 	size_t i;
 	ParserContext yctx;
 	char as_lc_char = 0;
@@ -231,7 +231,7 @@ int main(int argc, char *argv[])
 		get_host_cc_search_dirs(yctx.cc, yctx.compiler_dirs, yctx.cc_args);
 	}
 
-	paserd_state_init(pstate);
+	paserd_state_init(intab);
 	Parser yc;
 
 	if( yctx.source_files.size() == 0 )
@@ -239,7 +239,7 @@ int main(int argc, char *argv[])
 
 	if(yctx.predef_macros.Size() > 0) {
 		yctx.predef_macros.SetFileName("<command line>");
-		if( ! yc.DoFile(pstate, 2, &yctx.predef_macros, NULL) )
+		if( ! yc.DoFile(intab, 2, &yctx.predef_macros, NULL) )
 			fatal(121, "Error on parsing command line\n") ;
 	}
 
@@ -258,7 +258,7 @@ int main(int argc, char *argv[])
 		if(check_source_type(current_file) == SOURCE_TYPE_S)
 			yctx.as_lc_char = as_lc_char;
 
-		if( ! yc.DoFile(pstate, (size_t)-1, &file, &yctx))
+		if( ! yc.DoFile(intab, (size_t)-1, &file, &yctx))
 			fatal(120, "%s", yc.GetError());
 		break;
 	}

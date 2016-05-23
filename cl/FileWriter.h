@@ -13,15 +13,15 @@ public:
 };
 
 /* A File Writer via local os file api functions */
-class OsFileWriter : public FileWriter {
+class LocalFileWriter : public FileWriter {
 public:
 	virtual ssize_t Write(const void *buf, size_t count);
-	OsFileWriter(int mtype, const CC_STRING&);
-	OsFileWriter(int mtype, const char *);
+	LocalFileWriter(int mtype, const CC_STRING&);
+	LocalFileWriter(int mtype, const char *);
 };
 
 /* A Write Writer via talking to a domain socket server */
-class DsFileWriter : public FileWriter {
+class IpcFileWriter : public FileWriter {
 	static const char *svr_addr;
 	static const char *cli_addr;
 	static int svr_fd;
@@ -29,8 +29,8 @@ class DsFileWriter : public FileWriter {
 public:
 	int Connect(const char *rtdir, const char *saddr);
 	virtual ssize_t Write(const void *buf, size_t count);
-	DsFileWriter(int mtype);
-	virtual ~DsFileWriter();
+	IpcFileWriter(int mtype);
+	virtual ~IpcFileWriter();
 };
 
 #endif

@@ -54,19 +54,19 @@ FILE *fol_afopen(const CC_STRING& filename)
 
 FileWriter::~FileWriter() {}
 
-OsFileWriter::OsFileWriter(int mtype, const char *filename_)
+LocalFileWriter::LocalFileWriter(int mtype, const char *filename_)
 {
 	id = mtype;
 	filename = filename_;
 }
 
-OsFileWriter::OsFileWriter(int mtype, const CC_STRING& filename_)
+LocalFileWriter::LocalFileWriter(int mtype, const CC_STRING& filename_)
 {
 	id = mtype;
 	filename = filename_;
 }
 
-ssize_t OsFileWriter::Write(const void *buf, size_t count)
+ssize_t LocalFileWriter::Write(const void *buf, size_t count)
 {
 	ssize_t retval = count;
 	struct flock flock;
