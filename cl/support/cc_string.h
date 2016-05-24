@@ -36,8 +36,8 @@ public:
 
    inline CC_STRING& operator=(const char *s);
    inline const char * c_str() const;
-   void format(const char *fmt, ...);
-   void format(const char *fmt, va_list ap);
+   void Format(const char *fmt, ...);
+   void Format(const char *fmt, va_list ap);
 
    inline bool isnull() const;
    inline void remove_last();

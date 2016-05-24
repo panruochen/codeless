@@ -13,7 +13,7 @@
 
 #include "Parser.h"
 #include "GlobalVars.h"
-#include "utils.h"
+#include "Utilities.h"
 #include "misc.h"
 #include "defconfig.h"
 
@@ -68,7 +68,7 @@ static CC_STRING MakeDepFileName(const char *filename)
 
 static void save_command_line(const CC_STRING& filename, const CC_STRING& host_cc, const CC_STRING& cc_args, const CC_STRING& my_args )
 {
-	if(gvar_file_writers[MSGT_CL]) {
+	if(gvar_file_writers[VCH_CL]) {
 		char cwd[260];
 		CC_STRING s;
 
@@ -83,7 +83,7 @@ static void save_command_line(const CC_STRING& filename, const CC_STRING& host_c
 		s += "  ## ";
 		s += my_args;
 		s += "\n\n";
-		gvar_file_writers[MSGT_CL]->Write(s.c_str(), s.size());
+		gvar_file_writers[VCH_CL]->Write(s.c_str(), s.size());
 	}
 }
 
@@ -170,7 +170,7 @@ static bool create_file_writers(ParserContext *ctx)
 {
 	unsigned int i;
 
-	for(i = 0; i < MSGT_MAX; i++) {
+	for(i = 0; i < VCH_MAX; i++) {
 		if(ctx->of_array[i].isnull())
 			continue;
 		if(ctx->server_addr.isnull() || getenv("CL_FORCE_LOCAL_WRITE") )
@@ -179,7 +179,7 @@ static bool create_file_writers(ParserContext *ctx)
 			IpcFileWriter *fw = new IpcFileWriter(i);
 			if( fw->Connect(ctx->runtime_dir.isnull() ? DEF_RT_DIR : ctx->runtime_dir.c_str(), ctx->server_addr.c_str()) < 0 ) {
 				const int t = i;
-				for(i = 0; i < MSGT_MAX; i++)
+				for(i = 0; i < VCH_MAX; i++)
 					if(gvar_file_writers[i])
 						delete gvar_file_writers[i];
 				fprintf(stderr, "Cannot create socket for %u\n", t);
@@ -211,8 +211,8 @@ int main(int argc, char *argv[])
 
 	gvar_sm = ipsc_open("/var/tmp/SM0");
 
-	if(!yctx.of_array[MSGT_CL].isnull())
-		save_command_line(yctx.of_array[MSGT_CL].c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
+	if(!yctx.of_array[VCH_CL].isnull())
+		save_command_line(yctx.of_array[VCH_CL].c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
 
 	if( gv_preprocess_mode ) {
 		if(yctx.cc.isnull())
@@ -248,9 +248,9 @@ int main(int argc, char *argv[])
 		const char *current_file = yctx.source_files[i].c_str();
 		CC_STRING s;
 
-		if( ! yctx.of_array[MSGT_DEP].isnull() ) {
-			if( yctx.of_array[MSGT_DEP][0] == '\x1' )
-				yctx.of_array[MSGT_DEP] = MakeDepFileName(current_file);
+		if( ! yctx.of_array[VCH_DEP].isnull() ) {
+			if( yctx.of_array[VCH_DEP][0] == '\x1' )
+				yctx.of_array[VCH_DEP] = MakeDepFileName(current_file);
 		}
 
 		file.SetFileName(current_file);

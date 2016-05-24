@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include "cc_string.h"
 
-void CC_STRING::format(const char *fmt, va_list ap)
+void CC_STRING::Format(const char *fmt, va_list ap)
 {
 	char __buf0[1];
 	size_t n;
@@ -23,12 +23,12 @@ void CC_STRING::format(const char *fmt, va_list ap)
 }
 
 
-void CC_STRING::format(const char *fmt, ...)
+void CC_STRING::Format(const char *fmt, ...)
 {
 	va_list ap;
-    
+
 	va_start(ap, fmt);
-	format(fmt, ap);
+	Format(fmt, ap);
 	va_end(ap);
 }
 

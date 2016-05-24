@@ -11,7 +11,7 @@
 
 #include "cc_string.h"
 #include "cc_array.h"
-#include "utils.h"
+#include "Utilities.h"
 
 bool find(const CC_ARRAY<CC_STRING>& haystack, const CC_STRING& needle)
 {
@@ -96,7 +96,7 @@ CC_STRING fol_realpath(const CC_STRING& src)
 {
     char dest[4096];
 
-	if( ! y_realpath(dest, sizeof(dest), src.c_str()) )
+	if( ! GetRealPath(dest, sizeof(dest), src.c_str()) )
 		return CC_STRING("");
 	return CC_STRING(dest);
 }

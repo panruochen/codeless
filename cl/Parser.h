@@ -6,7 +6,7 @@
 #include "precedence-matrix.h"
 #include "cc_string.h"
 #include "cc_array.h"
-#include "log.h"
+#include "Log.h"
 #include "InternalTables.h"
 
 #include "base.h"
@@ -28,7 +28,7 @@ protected:
 	static const char *preprocessors[];
 	size_t       num_preprocessors;
 	ParserContext   *rtc;
-	FileWriter      *writers[MSGT_MAX];
+	FileWriter      *writers[VCH_MAX];
 
 	/*-------------------------------------------------------------
 	 *  class for conditional chain

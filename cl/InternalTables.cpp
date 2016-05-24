@@ -6,7 +6,7 @@
 
 #define  __OPM_CONST_DATA
 #include "InternalTables.h"
-#include "utils.h"
+#include "Utilities.h"
 
 static int precedence_matrix_setup(InternalTables *intab, size_t oprnum, const char **oprset, const char **matrix)
 {

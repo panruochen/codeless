@@ -15,7 +15,7 @@
 #include <signal.h>
 #include <list>
 #include <set>
-#include "msgfmt.h"
+#include "datagram.h"
 #include "defconfig.h"
 #include "ip_sc.h"
 
@@ -30,7 +30,7 @@ static InterProcessSharedCounter *gvar_sm;
 
 class Server;
 class Session {
-	DsMsg *msg;
+	Datagram *msg;
 	uint32_t  buflen, rxlen;
 	pid_t    cli_id;
 	int fd;
@@ -53,7 +53,7 @@ public:
 	inline void ClearMsg();
 	inline bool IsClosed();
 	inline int MsgType();
-	inline DsMsg *GetMsg();
+	inline Datagram *GetMsg();
 	inline uint32_t MsgLen();
 	inline uint32_t MsgPayloadLen();
 	inline int GetFD();
@@ -81,13 +81,13 @@ void Session::Start(int fd)
 {   this->fd = fd; }
 
 int Session::MsgType()
-{   return ((DsMsg *)msg)->type; }
+{   return ((Datagram *)msg)->type; }
 
-DsMsg *Session::GetMsg()
-{   return (DsMsg *)msg; }
+Datagram *Session::GetMsg()
+{   return (Datagram *)msg; }
 
 bool Session::MsgReady()
-{   return MsgLen() == rxlen && rxlen > sizeof(DsMsg); }
+{   return MsgLen() == rxlen && rxlen > sizeof(Datagram); }
 
 void Session::ClearMsg()
 {
@@ -110,7 +110,7 @@ int Session::GetFD()
 void Session::TryAlloc(unsigned int nb)
 {
 	if(buflen < nb) {
-		msg = (DsMsg *) realloc(msg, nb+4);
+		msg = (Datagram *) realloc(msg, nb+4);
 		buflen = nb;
 	}
 	if(msg == NULL)
@@ -127,7 +127,7 @@ uint32_t Session::MsgLen()
 uint32_t Session::MsgPayloadLen()
 {
 	uint32_t len = MsgLen();
-	return len ? len - sizeof(DsMsg) : 0;
+	return len ? len - sizeof(Datagram) : 0;
 }
 
 #define READ_CHECKED(ret,fd,buf,n)  do { \
@@ -145,17 +145,17 @@ uint32_t Session::MsgPayloadLen()
 
 int Session::RecvMsg()
 {
-	DsMsg *msghdr;
+	Datagram *msghdr;
 	ssize_t ret;
 	int retval = S_MORE;
 
 	if( MsgLen() == 0 ) {
 		assert(rxlen <= sizeof(msghdr->len));
 		TryAlloc(128);
-		READ_CHECKED(ret, fd, ((char*)msg) + rxlen, sizeof(DsMsg) - rxlen);
+		READ_CHECKED(ret, fd, ((char*)msg) + rxlen, sizeof(Datagram) - rxlen);
 		rxlen += ret;
 		if(rxlen >= sizeof(msghdr->len)) {
-			if(MsgLen() <= sizeof(DsMsg)) {
+			if(MsgLen() <= sizeof(Datagram)) {
 				ALOG("(%06u) Invalid msglen %u, rxlen=%u\n", cli_id, MsgLen(), rxlen);
 				exit(250);
 			}
@@ -165,11 +165,11 @@ int Session::RecvMsg()
 	}
 
 	TryAlloc(MsgLen());
-	msghdr = (DsMsg *) msg;
+	msghdr = (Datagram *) msg;
 	READ_CHECKED(ret, fd, (char*)msg + rxlen, MsgLen()-rxlen);
 	rxlen += ret;
-	if(rxlen >= sizeof(DsMsg)) {
-		msghdr = (DsMsg *) msg;
+	if(rxlen >= sizeof(Datagram)) {
+		msghdr = (Datagram *) msg;
 		if(cli_id == 0)
 			cli_id = msghdr->pid;
 
@@ -189,7 +189,7 @@ recv_failure:
 
 void Session::SanityCheck()
 {
-	DsMsg *msghdr;
+	Datagram *msghdr;
 	char prefix[256] = {0};
 
 	if(rxlen >= sizeof(msghdr->len))
@@ -200,7 +200,7 @@ void Session::SanityCheck()
 	if(rxlen < sizeof(*msghdr))
 		return;
 
-	msghdr = (DsMsg *)msg;
+	msghdr = (Datagram *)msg;
 	if(MsgLen() && rxlen > MsgLen()) {
 		ALOG("%s: rxlen %u exceeds MsgLen() %u\n", prefix, rxlen, MsgLen());
 dump_and_exit:
@@ -275,12 +275,12 @@ class FileAgent {
 	pthread_mutex_t mq_lock;
 	void *MainThread();
 	static void *MainThread(void *obj);
-	std::list<DsMsg *> mq;
+	std::list<Datagram *> mq;
 	Md5Set *md5_set;
 	int msg_type;
 	FILE *fp;
 public:
-	bool Post(DsMsg *msg);
+	bool Post(Datagram *msg);
 	FileAgent(const char *rt_dir, const char *filename, int mtype);
 	~FileAgent();
 	char *filename;
@@ -308,7 +308,7 @@ FileAgent::FileAgent(const char *rt_dir, const char *filename_, int mtype_)
 		throw errno;
 
 #if HAVE_MD5
-	if(mtype_ == MSGT_CV)
+	if(mtype_ == VCH_CV)
 		md5_set = new Md5Set;
 	else
 #endif
@@ -337,7 +337,7 @@ void * FileAgent::MainThread()
 	while(alive || mq.size()) {
 		sema.Wait();
 		while(mq.size()) {
-			DsMsg *msg;
+			Datagram *msg;
 
 			pthread_mutex_lock(&mq_lock);
 			msg = mq.front();
@@ -345,7 +345,7 @@ void * FileAgent::MainThread()
 			pthread_mutex_unlock(&mq_lock);
 
 			msg_wr++;
-			fwrite(msg->data, 1, msg->len - sizeof(DsMsg), fp);
+			fwrite(msg->data, 1, msg->len - sizeof(Datagram), fp);
 			free((void*)msg);
 		}
 	}
@@ -354,7 +354,7 @@ void * FileAgent::MainThread()
 	return NULL;
 }
 
-bool FileAgent::Post(DsMsg *msg)
+bool FileAgent::Post(Datagram *msg)
 {
 	msg_rx++;
 
@@ -380,10 +380,10 @@ bool FileAgent::Post(DsMsg *msg)
 //  A Message Server Class
 //---------------------------------------------------------------------------//
 class Server {
-	const char *of_array[MSGT_MAX];
+	const char *of_array[VCH_MAX];
 	char *server_addr;
 	const char *rt_dir;
-	FileAgent *agents[MSGT_MAX];
+	FileAgent *agents[VCH_MAX];
 	unsigned int max_clients;
 	unsigned int nfds;
 	Session **sessions;
@@ -517,7 +517,7 @@ bool Server::Run()
 	pollfds[0].fd = listenfd;
 	nfds = 1;
 
-	for(i = 0; i < MSGT_MAX; i++) {
+	for(i = 0; i < VCH_MAX; i++) {
 		if(of_array[i] == NULL)
 			continue;
 		try {
@@ -579,7 +579,7 @@ bool Server::Run()
 						if(ret == Session::S_MOK) {
 							const int mt = sess->MsgType();
 							FileAgent *const ag = agents[mt];
-							assert(mt >= 0 && mt < MSGT_MAX);
+							assert(mt >= 0 && mt < VCH_MAX);
 							assert(ag);
 							ag->Post(sess->GetMsg());
 							sess->ClearMsg();
@@ -603,7 +603,7 @@ bool Server::Run()
 
 	}
 
-	for(i = 0; i < MSGT_MAX; i++) {
+	for(i = 0; i < VCH_MAX; i++) {
 		if(agents[i]) {
 			delete agents[i];
 			agents[i] = NULL;
@@ -662,13 +662,13 @@ bool Server::ParseOptions(int argc, char *argv[])
 			server_addr = strdup(optarg);
             break;
         case COP_SAVE_COMMAND_LINE:
-			of_array[MSGT_CL] = strdup(optarg);
+			of_array[VCH_CL] = strdup(optarg);
 			break;
         case COP_SAVE_DEPENDENCY:
-			of_array[MSGT_DEP] = strdup(optarg);
+			of_array[VCH_DEP] = strdup(optarg);
 			break;
         case COP_SAVE_CONDVALS:
-			of_array[MSGT_CV] = strdup(optarg);
+			of_array[VCH_CV] = strdup(optarg);
 			break;
         case COP_RTDIR:
 			if(rt_dir)

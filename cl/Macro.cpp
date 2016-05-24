@@ -179,7 +179,7 @@ CC_STRING ExpandMacro::Expand_FLM(SynMacro *ma)
 	skip_blanks(p);
 	if( iseol(*p) ) {
 		CC_STRING a;
-		a.format("Macro \"%s\" expects arguments", TR(intab,ma->id));
+		a.Format("Macro \"%s\" expects arguments", TR(intab,ma->id));
 		excep = a;
 		throw &excep;
 	}
@@ -235,7 +235,7 @@ CC_STRING ExpandMacro::Expand_FLM(SynMacro *ma)
 			margs.push_back(CC_STRING(""));
 		} else {
 			CC_STRING a;
-			a.format("Macro \"%s\" requires %u arguments, but %u given",
+			a.Format("Macro \"%s\" requires %u arguments, but %u given",
 				TR(intab,ma->id), n, margs.size() );
 			excep = a;
 			throw &excep;
@@ -418,7 +418,7 @@ void ExpandMacro::process_define(sym_t mid, SynMacro *ma)
 						continue;
 					} else {
 						CC_STRING a;
-						a.format("\"%s\" may not appear in macro parameter list", TR(intab,token.id));
+						a.Format("\"%s\" may not appear in macro parameter list", TR(intab,token.id));
 						excep = a;
 						goto error;
 					}

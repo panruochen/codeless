@@ -10,7 +10,7 @@
 #include <sys/types.h>
 #include <stdarg.h>
 #include <errno.h>
-#include "log.h"
+#include "Log.h"
 
 const char *log_file = "/var/exfat.log";
 static int log_fd = 2;

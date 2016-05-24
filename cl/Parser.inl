@@ -25,7 +25,7 @@ inline Parser::IncludedFile *Parser::PopIncludedFile()
 
 inline bool Parser::has_dep_file(void)
 {
-	return rtc && !rtc->of_array[MSGT_DEP].isnull();
+	return rtc && !rtc->of_array[VCH_DEP].isnull();
 }
 
 inline const char *Parser::GetError()

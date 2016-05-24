@@ -11,11 +11,11 @@
 #include <libgen.h>
 #include <utime.h>
 
-#include "utils.h"
+#include "Utilities.h"
 #include "cc_string.h"
 #include "cc_array.h"
 #include "ParserContext.h"
-#include "log.h"
+#include "Log.h"
 #include "GlobalVars.h"
 #include "defconfig.h"
 
@@ -248,18 +248,18 @@ retry:
 			save_my_args();
 			break;
 		case COP_SAVE_COMMAND_LINE:
-			of_array[MSGT_CL] = optarg;
+			of_array[VCH_CL] = optarg;
 			save_my_args();
 			break;
 		case COP_SAVE_DEPENDENCY:
 			if(optarg != NULL)
-				of_array[MSGT_DEP] = optarg;
+				of_array[VCH_DEP] = optarg;
 			else
-				of_array[MSGT_DEP] = '\x1';
+				of_array[VCH_DEP] = '\x1';
 			save_my_args();
 			break;
 		case COP_SAVE_CONDVALS:
-			of_array[MSGT_CV] = optarg;
+			of_array[VCH_CV] = optarg;
 			save_my_args();
 			break;
 		case COP_IN_PLACE:
@@ -347,10 +347,10 @@ retry:
 		outfile = OF_NULL;
 
 	CB_BEGIN
-	const char *xe = !of_array[MSGT_CV].isnull() ? "--yz-save-condvals" :
-		(!of_array[MSGT_DEP].isnull() ? "--yz-save-dep" : NULL);
+	const char *xe = !of_array[VCH_CV].isnull() ? "--yz-save-condvals" :
+		(!of_array[VCH_DEP].isnull() ? "--yz-save-dep" : NULL);
 	if( xe && working_dir.isnull() ) {
-		errmsg.format("--yz-topdir must be specified if %s exists", xe);
+		errmsg.Format("--yz-topdir must be specified if %s exists", xe);
 		goto error;
 	}
 	CB_END

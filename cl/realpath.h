@@ -31,7 +31,7 @@ static CHAR_TYPE *go_upper(const CHAR_TYPE *const path, CHAR_TYPE *pos)
 }
 
 #define  HAVE_TRAILING_SPLASH  0
-CHAR_TYPE *y_realpath(CHAR_TYPE *dest, size_t n, const CHAR_TYPE *src)
+CHAR_TYPE *GetRealPath(CHAR_TYPE *dest, size_t n, const CHAR_TYPE *src)
 {
 #define NEXT_STATE(next,step)  do { state = Y9STA_##next; *d = c; d += step; } while(0)
 

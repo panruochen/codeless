@@ -1,7 +1,7 @@
 #ifndef __PARSER_CONTEXT_H
 #define __PARSER_CONTEXT_H
 
-#include "msgfmt.h"
+#include "datagram.h"
 #include "File.h"
 
 class ParserContext {
@@ -27,7 +27,7 @@ public:
 //	CC_STRING            outfile;
 
 	/* Additional output files */
-	CC_STRING            of_array[MSGT_MAX];
+	CC_STRING            of_array[VCH_MAX];
 
 	CC_STRING            baksuffix;
 	CC_STRING            cc;

@@ -14,7 +14,7 @@
 
 #include "Parser.h"
 #include "GlobalVars.h"
-#include "utils.h"
+#include "Utilities.h"
 #include "misc.h"
 
 static bool IsOperator(sym_t sym)
@@ -141,10 +141,10 @@ static inline bool operator != (const SynToken& a, uint32_t val)
 const char *Parser::TransToken(SynToken *tokp)
 {
 	if(tokp->attr == SynToken::TA_UINT ) {
-		tokp->name.format("%u", tokp->u32_val);
+		tokp->name.Format("%u", tokp->u32_val);
 		return tokp->name.c_str();
 	} else if(tokp->attr == SynToken::TA_INT ) {
-		tokp->name.format("%d", tokp->u32_val);
+		tokp->name.Format("%d", tokp->u32_val);
 		return tokp->name.c_str();
 	}
 	return TR(intab, tokp->id);
@@ -241,7 +241,7 @@ bool Parser::DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& 
 		result.u32_val = opnd1.u32_val >> opnd2.u32_val;
 		break;
 	default:
-		errmsg.format("Invalid operator %s", TR(intab,opr));
+		errmsg.Format("Invalid operator %s", TR(intab,opr));
 		goto error;
 	}
 	return true;
@@ -293,7 +293,7 @@ done:
 	return true;
 
 error_no_operands:
-	errmsg.format("Not enough operands for opeator '%s'", TR(intab,opr));
+	errmsg.Format("Not enough operands for opeator '%s'", TR(intab,opr));
 	return false;
 }
 
@@ -402,7 +402,7 @@ int Parser::Compute(const char *line)
 			token.attr = SynToken::TA_INT;
 		if( sign != 0 ) {
 			if(token.attr != SynToken::TA_UINT && token.id != SSID_DEFINED) {
-				errmsg.format("%s following %c", TR(intab,token.id), sign);
+				errmsg.Format("%s following %c", TR(intab,token.id), sign);
 				goto error;
 			}
 			if(sign == '-') {
@@ -512,7 +512,7 @@ again:
 				opr_stack.push(opr);
 				break;
 			case _XX:
-				errmsg.format("Cannot compare \"%s\" and \"%s\"", TR(intab,opr0), TR(intab,opr));
+				errmsg.Format("Cannot compare \"%s\" and \"%s\"", TR(intab,opr0), TR(intab,opr));
 				log(LOGV_ERROR, "*ERROR* %s\n", errmsg.c_str());
 				goto error;
 			}
@@ -672,19 +672,19 @@ void Parser::IncludedFile::save_conditional(Cond *c, int rh)
 
 	assert(c->type <= Cond::CT_ELSE);
 	if(directives[c->type]) {
-		tmp.format("  %-4u %s %s ", rh, directives[c->type], (c->value ? "true" : "false"));
+		tmp.Format("  %-4u %s %s ", rh, directives[c->type], (c->value ? "true" : "false"));
 		cr_text += tmp;
 
 		if(c->boff)
-			tmp.format("%u,%d ", c->begin, c->boff);
+			tmp.Format("%u,%d ", c->begin, c->boff);
 		else
-			tmp.format("%u ", c->begin);
+			tmp.Format("%u ", c->begin);
 		cr_text += tmp;
 
 		if(c->eoff)
-			tmp.format("%u,%d\n", c->end, c->eoff);
+			tmp.Format("%u,%d\n", c->end, c->eoff);
 		else
-			tmp.format("%u\n", c->end);
+			tmp.Format("%u\n", c->end);
 		cr_text += tmp;
 	}
 }
@@ -768,9 +768,9 @@ void Parser::AddDependency(const char *prefix, const CC_STRING& filename)
 
 void Parser::SaveCondValInfo(const CC_STRING& s)
 {
-	if(writers[MSGT_CV] && !s.isnull()) {
+	if(writers[VCH_CV] && !s.isnull()) {
 		ssize_t ret;
-		ret = writers[MSGT_CV]->Write(s.c_str(), s.size());
+		ret = writers[VCH_CV]->Write(s.c_str(), s.size());
 		if(ret < 0)
 			exit(-EPIPE);
 	}
@@ -778,9 +778,9 @@ void Parser::SaveCondValInfo(const CC_STRING& s)
 
 void Parser::SaveDepInfo(const CC_STRING& s)
 {
-	if(writers[MSGT_DEP] && !s.isnull()) {
+	if(writers[VCH_DEP] && !s.isnull()) {
 		ssize_t ret;
-		ret = writers[MSGT_DEP]->Write(s.c_str(), s.size());
+		ret = writers[VCH_DEP]->Write(s.c_str(), s.size());
 		if(ret < 0)
 			exit(-EPIPE);
 	}
@@ -845,12 +845,12 @@ File *Parser::GetIncludedFile(sym_t preprocessor, const char *line, FILE **outf,
 	itoken = GetIncludeFileName(iline, quoted);
 	iline.clear();
 	if( itoken.isnull() ) {
-		errmsg.format("Invalid include preprocessor: %s", pline.from.c_str());
+		errmsg.Format("Invalid include preprocessor: %s", pline.from.c_str());
 		goto done;
 	}
 
 	if(!rtc->get_include_file_path(itoken, GetCurrentFileName(), quoted, preprocessor == SSID_SHARP_INCLUDE_NEXT, ifpath, &in_compiler_dir)) {
-		errmsg.format("Cannot find include file \"%s\"", itoken.c_str());
+		errmsg.Format("Cannot find include file \"%s\"", itoken.c_str());
 		goto done;
 	}
 
@@ -880,7 +880,7 @@ bool Parser::do_include(sym_t preprocessor, const char *line, const char **outpu
 	if(file->Open()) {
 		PushIncludedFile(file, NULL, COUNT_OF(Parser::preprocessors), in_compiler_dir, conditionals.size());
 	} else {
-		errmsg.format("Cannot open `%s'", file->name.c_str());
+		errmsg.Format("Cannot open `%s'", file->name.c_str());
 		return false;
 	}
 
@@ -1055,7 +1055,7 @@ done:
 		CC_STRING pmsg, ts;
 		while(included_files.size() > 0) {
 			included_files.pop(tmp);
-			ts.format("  %s:%u\n", tmp->ifile->name.c_str(), tmp->ifile->line);
+			ts.Format("  %s:%u\n", tmp->ifile->name.c_str(), tmp->ifile->line);
 			pmsg += ts;
 		}
 		if( !pmsg.isnull() ) {
@@ -1384,7 +1384,7 @@ bool Parser::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np
 	bool in_compiler_dir;
 	for(size_t i = 0; i < ifiles.size(); i++) {
 		if(!rtc->get_include_file_path(ifiles[i], CC_STRING(""), true, false, path, &in_compiler_dir)) {
-			errmsg.format("Can not find include file \"%s\"", ifiles[i].c_str());
+			errmsg.Format("Can not find include file \"%s\"", ifiles[i].c_str());
 			return false;
 		}
 		RealFile *file;
@@ -1392,7 +1392,7 @@ bool Parser::GetCmdLineIncludeFiles(const CC_ARRAY<CC_STRING>& ifiles, size_t np
 		file->SetFileName(path);
 
 		if( ! file->Open() ) {
-			errmsg.format("Can not open include file \"%s\"", ifiles[i].c_str());
+			errmsg.Format("Can not open include file \"%s\"", ifiles[i].c_str());
 			return false;
 		}
 		PushIncludedFile(file, NULL, np, in_compiler_dir, conditionals.size());
@@ -1418,7 +1418,7 @@ bool Parser::RunEngine(size_t cond)
 				return false;
 		} else if (rc == 0) {
 			IncludedFile *ifile = PopIncludedFile();
-			if(!ifile->in_compiler_dir && rtc && !rtc->of_array[MSGT_CV].isnull()) {
+			if(!ifile->in_compiler_dir && rtc && !rtc->of_array[VCH_CV].isnull()) {
 				ifile->produce_cr_text();
 				SaveCondValInfo(ifile->cr_text);
 			}
@@ -1460,7 +1460,7 @@ bool Parser::DoFile(InternalTables *intab, size_t num_preprocessors, File *infil
 		utb.modtime = stb.st_mtime;
 	}
 	if( ! infile->Open() ) {
-		errmsg.format("Cannot open \"%s\" for reading\n");
+		errmsg.Format("Cannot open \"%s\" for reading\n");
 		return false;
 	}
 
@@ -1483,7 +1483,7 @@ bool Parser::DoFile(InternalTables *intab, size_t num_preprocessors, File *infil
 			strcpy(tmp_outfile, "@cl@-XXXXXX");
 			fd = mkstemp(tmp_outfile);
 			if( fd < 0 ) {
-				errmsg.format("Cannot open \"%s\" for writing\n", tmp_outfile);
+				errmsg.Format("Cannot open \"%s\" for writing\n", tmp_outfile);
 				infile->Close();
 				return false;
 			}
@@ -1495,11 +1495,11 @@ bool Parser::DoFile(InternalTables *intab, size_t num_preprocessors, File *infil
 	if(ctx == NULL)
 		memset(writers, 0, sizeof(writers));
 	else {
-		writers[MSGT_CL] = NULL;
-		if(!ctx->of_array[MSGT_DEP].isnull())
-			writers[MSGT_DEP] = gvar_file_writers[MSGT_DEP];
-		if(!ctx->of_array[MSGT_CV].isnull())
-			writers[MSGT_CV] = gvar_file_writers[MSGT_CV];
+		writers[VCH_CL] = NULL;
+		if(!ctx->of_array[VCH_DEP].isnull())
+			writers[VCH_DEP] = gvar_file_writers[VCH_DEP];
+		if(!ctx->of_array[VCH_CV].isnull())
+			writers[VCH_CV] = gvar_file_writers[VCH_CV];
 	}
 
 	if( num_preprocessors >= COUNT_OF(Parser::preprocessors) )
@@ -1529,7 +1529,7 @@ error:
 	if(!retval) {
 		if(included_files.size() > 0) {
 			CC_STRING tmp;
-			tmp.format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), pline.from.c_str(), GetError());
+			tmp.Format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), pline.from.c_str(), GetError());
 			errmsg = tmp;
 		}
 		IncludedFile *ilevel;

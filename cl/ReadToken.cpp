@@ -26,7 +26,7 @@ static CC_STRING get_format(const CC_STRING& s, CC_STRING& error)
 		fmt += s[0];
 		break;
 	default:
-		error.format("Bad format: %s\n", s.c_str());
+		error.Format("Bad format: %s\n", s.c_str());
 	}
 	return fmt;
 }

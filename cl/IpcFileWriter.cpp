@@ -8,7 +8,7 @@
 #include <sys/time.h>
 #include <errno.h>
 #include <assert.h>
-#include "msgfmt.h"
+#include "datagram.h"
 #include "md5.h"
 #include "FileWriter.h"
 #include "ip_sc.h"
@@ -90,7 +90,7 @@ ssize_t IpcFileWriter::Write(const void *buf, size_t count)
 {
 	int ret;
 	const size_t chunksize = 0x10000;
-	DsMsg msghdr;
+	Datagram msghdr;
 	ssize_t retval = count;
 	uint64_t elapsed;
 

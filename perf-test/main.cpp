@@ -1,4 +1,4 @@
-#include "msgfmt.h"
+#include "datagram.h"
 #include "FileWriter.h"
 #include "GlobalVars.h"
 #include <unistd.h>
@@ -36,7 +36,7 @@ int main(int argc, const char *argv[])
 	server_addr = strdup(argv[2]);
 	runtime_dir = dirname(__runtime_dir);
 
-	fw = new DsFileWriter(MSGT_CV);
+	fw = new DsFileWriter(VCH_CV);
     if( fw->Connect(runtime_dir, server_addr) < 0 ) {
 		ALOG("Can not connect to %s, errno=%d (%s)\n", server_addr, errno, strerror(errno));
 		exit(EINVAL);

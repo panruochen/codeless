@@ -1,5 +1,5 @@
-#ifndef __MSG_FMT_H
-#define __MSG_FMT_H
+#ifndef __DATAGRAM_H
+#define __DATAGRAM_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -9,11 +9,11 @@ extern "C" {
 #include <inttypes.h>
 #include <unistd.h>
 
-typedef struct _Md5Sum {
+typedef struct {
 	uint8_t data[16];
 } Md5Sum;
 
-typedef struct _DsMsg_S {
+typedef struct {
 #define DMF_MD5  0x20
 	uint32_t len; /* The length of the message including this header */
 	char     tag[2]; /* "MSG" */
@@ -22,13 +22,14 @@ typedef struct _DsMsg_S {
 	pid_t    pid;
 	Md5Sum   md5_sum;
 	char data[0];
-} DsMsg;
+} Datagram;
 
+/* virtual channles for message transfer */
 enum {
-	MSGT_CL = 0,
-	MSGT_CV,
-	MSGT_DEP,
-	MSGT_MAX,
+	VCH_CL = 0,
+	VCH_CV,
+	VCH_DEP,
+	VCH_MAX,
 };
 
 #ifdef __cplusplus
