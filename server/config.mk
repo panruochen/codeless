@@ -1,14 +1,15 @@
+WD              := server
 EXTRA_CFLAGS    := $(COMMON_CFLAGS) -ggdb -O3
 EXTRA_CFLAGS    += -Wall ##-Wno-unused-result #-Wno-format
 DEFINES         := -DSANITY_CHECK
-SRCS            := ./ ../common/
+SRCS            := $(WD)/ ./common/
 INCS            := $(SRCS)
 TARGET_TYPE     := EXE
-TARGET          := ../cl-server.exe
+TARGET          := cl-server.exe
 LIBS            := -lpthread
-OBJ_DIR         := .objs
+OBJ_DIR         := .objs-server
 SRC_EXTS        := cpp c
-EXTERNAL_DEPENDS:= ../Makefile
+EXCLUDE_FILES   := common/got_error.cpp
 
-include ../tools/common_Makefile
-
+$(call BUILD_EXECUTABLE)
+$(call CLEAN_VARS)
