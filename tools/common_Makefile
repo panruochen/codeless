@@ -59,7 +59,7 @@ q           = @
 q_compile   = @echo '  CC     $$< => $$@';
 q_link      = @echo '  LINK   $@';
 q_ar        = @echo '  AR     $@';
-q_mkdir     = @echo '  MKDIR  $1';
+q_mkdir     = @echo '  MKDIR  $@';
 q_clean     = @echo '  CLEAN';
 q_distclean = @echo '  DISTCLEAN';
 endif
@@ -79,12 +79,12 @@ do_ifeq  = $(if $(subst $1,,$2),,$3)
 do_ifneq = $(if $(subst $1,,$2),$3)
 
 __rpath = $(strip $(subst /./,/, \
-	$(eval __ivx = $(subst ././,./,$(subst //,/,$(subst \\,/,$1)))) \
-	$(if $(subst $(__ivx),,$1),$(call __rpath,$(__ivx)),$1)))
+	$(eval __pcm_v1 = $(subst ././,./,$(subst //,/,$(subst \\,/,$1)))) \
+	$(if $(subst $(__pcm_v1),,$1),$(call __rpath,$(__pcm_v1)),$1)))
 
-rpath = $(sort $(eval __ivx := $(call __rpath,$1)) \
-	$(filter ./,$(__ivx)) \
-	$(patsubst ./%,%,$(__ivx)))
+rpath = $(sort $(eval __pcm_v1 := $(call __rpath,$1)) \
+	$(filter ./,$(__pcm_v1)) \
+	$(patsubst ./%,%,$(__pcm_v1)))
 
 OBJ_DIR := $(strip $(OBJ_DIR))
 objdir := $(patsubst ./%,%,$(if $(OBJ_DIR),$(call __rpath,$(OBJ_DIR)/)))
@@ -149,10 +149,10 @@ cmd_compile = $(q_compile)$(if $(COMPILE[$1]),$(COMPILE[$1]),$(GCC) -I$$(dir $$<
 #  $2 -- The Source suffix                                           #
 #  $3 -- Equal to $(wildcard $1*.$2)                                 #
 #--------------------------------------------------------------------#
-compile_multiple = $(if $3,$(call __compile_multiple,$(call get_object_names,$3,$2),$1,$2))
+static_pattern_rule = $(if $3,$(call __static_pattern_rule,$(call get_object_names,$3,$2),$1,$2))
 
-define __compile_multiple
-$(patsubst ./%,%,$1: $(call remap_objdir,$(objdir)$2%.$(O)): $2%.$3) $(depend_list)
+define __static_pattern_rule
+$(patsubst ./%,%,$1: $(call remap_objdir,$(objdir)$2%.$(O)): $2%.$3) $(depend_list) | $(call remap_objdir,$(objdir)$2)
 	$(call cmd_compile,$3)
 
 endef
@@ -167,19 +167,6 @@ $2: $1 $(depend_list)
 	$(call cmd_compile,$(patsubst .%,%,$(suffix $1)))
 
 endef
-
-
-#---------------------------------------------#
-# Set up a rule for make a directory.         #
-#  $1 -- The directory                        #
-#---------------------------------------------#
-mkdir = $(if $1,$(call __mkdir,$1))
-
-define __mkdir
-$1: ; $(q_mkdir)mkdir -p $1
-
-endef
-
 
 #-------------------------------------#
 # Get the list of all source files    #
@@ -214,10 +201,12 @@ all: $(object_dirs) $(TARGET)
 # Construct Rules
 #----------------------------------------------------#
 $(eval $(foreach i,$(src_d),$(foreach j,$(SRC_EXTS),\
-	     $(call compile_multiple,$(filter-out ./,$i),$j,$(call exclude,$(wildcard $(filter-out ./,$i)*.$j)))))\
+	     $(call static_pattern_rule,$(filter-out ./,$i),$j,$(call exclude,$(wildcard $(filter-out ./,$i)*.$j)))))\
        $(foreach i,$(call exclude,$(src_f)),$(call compile_single,$i,\
-	     $(call get_object_names,$i,$(SRC_EXTS))))\
-       $(foreach i,$(object_dirs),$(call mkdir,$i)))
+	     $(call get_object_names,$i,$(SRC_EXTS)))))
+$(call remap_objdir,$(object_dirs)) : % :
+	$(q_mkdir)mkdir -p $@
+
 
 #------------------------------------#
 # Command to make directory          #
