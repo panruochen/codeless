@@ -1,19 +1,17 @@
-EXTRA_CFLAGS    := $(COMMON_CFLAGS) -ggdb -O3
+CFLAGS          := $(COMMON_CFLAGS) -ggdb -O3
 WD              := cl
-EXTRA_CFLAGS    += -Wall -Wno-unused-result #-Wno-format
+CFLAGS          += -Wall -Wno-unused-result #-Wno-format
 DEFINES         := -DSANITY_CHECK
-SRCS            := ./$(WD)/ ./$(WD)/support/ ./common/ ./$(WD)//.////support . ./././$(WD)///support//./
+#SRCS            := ./$(WD)/ ./$(WD)/support/ ./common/ ./$(WD)//.////support . ./././$(WD)///support//./
+SRCS            := ./$(WD)/ ./$(WD)/support/ ./$(WD)//.////support . ./././$(WD)///support//./
 INCS            := $(SRCS) ./common
-#SRCS            := ./ ./support/ ../common/ip_sc.c ../common/md5.c ./j.cc
-#INCS            := ./ ./support/ ../common/
 EXCLUDE_FILES   := common/got_error.cpp
 TARGET          := $(WD).exe
 LIBS            := -lpthread
 OBJ_DIR         := .objs-cl
 SRC_EXTS        := cpp c cc
+DEPENDENT_LIBS  := lib/libcommon.a
 TARGET_DEPENDS  := $(WD)/precedence-matrix.h $(WD)/help.h
-
-VERBOSE := y
 
 SCRIPTS_DIR := $(WD)/scripts
 
@@ -26,7 +24,7 @@ $(WD)/help.h: $(WD)/help.txt
 		echo '#define __HELP_H'; \
 		echo 'static const char help_msg[] ='; \
 		sed -e 's/^/"/' -e 's/$$/\\n"/' $<; \
-		echo ';\n#endif'; } > $@
+		echo -e ';\n#endif'; } > $@
 
 $(call BUILD_EXECUTABLE)
 $(call CLEAN_VARS)
