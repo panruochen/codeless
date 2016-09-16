@@ -4,9 +4,9 @@
 #include <assert.h>
 #include <ctype.h>
 #include <unistd.h>
-
 #include <sys/types.h>
 #include <assert.h>
+#include <set>
 
 #include "base.h"
 #include "misc.h"
@@ -44,7 +44,8 @@ static Exception excep;
 
 class ExpandMacro {
 public:
-	ExpandMacro(InternalTables *intab, const char *line, bool for_include);
+	static size_t global_level;
+	ExpandMacro(InternalTables *intab, const char *line, bool for_include, sym_t left=SSID_INVALID);
 	CC_STRING   TryExpand();
 
 private:
@@ -52,6 +53,7 @@ private:
 	InternalTables *intab;
 	CC_STRING     inStr;
 	bool for_include;
+	const sym_t left;
 	sym_t last_ids[2];
 
 	CC_STRING Expand_FLM(SynMacro *ma);
@@ -65,6 +67,8 @@ private:
 	void process_define(sym_t mid, SynMacro *ma);
 	bool ReadToken(ReadReq *req, bool for_include);
 };
+
+size_t ExpandMacro::global_level = 0;
 
 inline bool ExpandMacro::in_defined_context()
 {
@@ -155,8 +159,11 @@ bool ExpandMacro::IsValidToken(const CC_STRING& s)
 
 void ExpandMacro::Trim(CC_STRING& s)
 {
-	const char *p1, *p2, *end = s.c_str() + s.size();
+	const char *p1, *p2, *end;
 
+	if(s.size() == 0)
+		return;
+	end = s.c_str() + s.size();
 	for(p1 = s.c_str() ; p1 != '\0' && isblank(*p1); p1++ ) ;
 	for(p2 = end - 1 ; p2 >= s.c_str() && isblank(*p2); p2-- ) ;
 	p2++;
@@ -233,6 +240,8 @@ CC_STRING ExpandMacro::Expand_FLM(SynMacro *ma)
 	if(n != margs.size()) {
 		if( ma->va_args && margs.size() + 1 == n ) {
 			margs.push_back(CC_STRING(""));
+		} else if(n == 0 && margs.size() == 1 && margs[0].empty()) {
+			margs.clear();
 		} else {
 			CC_STRING a;
 			a.Format("Macro \"%s\" requires %u arguments, but %u given",
@@ -278,12 +287,16 @@ CC_STRING ExpandMacro::Expand_OLM(SynMacro *ma)
 CC_STRING ExpandMacro::TryExpand()
 {
 	CC_STRING outs;
-	static int debug_level;
-	CC_STRING saved_inStr = inStr;
 
-	debug_level++;
-
-
+	if(inStr.size() == 0)
+		goto out;
+	global_level++;
+	if(global_level >= 1024) {
+		CC_STRING a;
+		a.Format("Too many recursive levels (%zu)", global_level);
+		excep = a;
+		throw &excep;
+	}
 	while(1) {
 		const char *const last_pos  = req.cp;
 
@@ -292,29 +305,24 @@ CC_STRING ExpandMacro::TryExpand()
 			break;
 		if( req.token.attr == SynToken::TA_IDENT ) {
 			SynMacro *ma;
-			CC_STRING tmp;
+			CC_STRING tmp1;
+
 			ma = GetMacro(req.token.id);
-			if( IS_MACRO(ma) && ! in_defined_context() ) {
+
+			if( IS_MACRO(ma) && ! in_defined_context() && left != ma->id ) {
 				if( IS_FLM(ma) ) {
 					skip_blanks(req.cp);
-					if( *req.cp == '(' ) {
-						tmp = Expand_FLM(ma);
-					}
+					if( *req.cp == '(' )
+						tmp1 = Expand_FLM(ma);
 					else
 						goto do_cat;
-				} else {
-					tmp = Expand_OLM(ma);
-				}
+				} else
+					tmp1 = Expand_OLM(ma);
 
-				const ssize_t offset = last_pos - inStr.c_str();
-				CC_STRING newStr;
-
-				newStr.strcat(inStr.c_str(), last_pos);
-				newStr += tmp;
-				newStr += req.cp;
-
-				inStr = newStr;
-				req.cp   = inStr.c_str() + offset;
+				CC_STRING tmp2;
+				ExpandMacro expander2(intab, tmp1.c_str(), for_include, ma->id);
+				tmp2 = expander2.TryExpand();
+				outs += tmp2;
 			} else
 				goto do_cat;
 		} else {
@@ -325,21 +333,19 @@ CC_STRING ExpandMacro::TryExpand()
 		last_ids[1] = req.token.id;
 	}
 
-//	printf("Leave [%u] %s\n", debug_level, outs.c_str());
-	--debug_level;
-//	fprintf(stderr, "*** %u: %s => %s\n", debug_level, saved_inStr.c_str(), outs.c_str());
-
+	--global_level;
+out:
 	return outs;
 }
 
 
-ExpandMacro::ExpandMacro(InternalTables *intab, const char *line, bool for_include)
+ExpandMacro::ExpandMacro(InternalTables *intab, const char *line, bool for_include_, sym_t left_) :
+	for_include(for_include_), left(left_)
 {
-	this->intab      = intab;
-	this->inStr       = line;
-	this->req.line    =
-	this->req.cp      = inStr.c_str();
-	this->for_include = for_include;
+	this->intab    = intab;
+	this->inStr    = line;
+	this->req.line =
+	this->req.cp   = inStr.c_str();
 	last_ids[0] = SSID_INVALID;
 	last_ids[1] = SSID_INVALID;
 }
@@ -567,7 +573,7 @@ void handle_undef(InternalTables *intab, const char *line)
 	ReadReq req(line);
 
 	ReadToken(intab, &req, false);
-	if( ! gv_preprocess_mode )
+	if( ! gvar_preprocess_mode )
 		intab->maLut.Put(req.token.id, SynMacro::NotDef);
 	else {
 		SynMacro *ma = intab->maLut.Lookup(req.token.id);

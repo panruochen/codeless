@@ -5,8 +5,8 @@
 
 const char*  dv_current_file;
 size_t       dv_current_line;
-uint8_t      gv_preprocess_mode = true;
-bool         rtm_expand_macros; //= true;
+uint8_t      gvar_preprocess_mode = true;
+bool         gvar_expand_macros; //= true;
 
 FileWriter  *gvar_file_writers[VCH_MAX];
 

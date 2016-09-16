@@ -739,7 +739,7 @@ static const char *g1_oprset[] = {
 	",", "?", ":", "||", "&&", "|", "^", "&", "==", "!=", "<", ">", "<=", ">=", "<<", ">>", "+", "-", "*", "/", "%", "~", "!", "i", "(", ")", "#", };
 
 static const char *reserved_symbols[] = {
-	"##", "#if", "#elif", "#ifdef", "#ifndef", "#else", "#endif", "#define", "#undef", "#include", "#include_next", "...", "*X*", "defined", "__VA_ARGS__", };
+	"##", "#if", "#elif", "#ifdef", "#ifndef", "#else", "#endif", "#define", "#undef", "#include", "#include_next", "++", "--", "...", "*X*", "defined", "__VA_ARGS__", };
 #endif
 
 #define  SSID_COMMA               0
@@ -780,10 +780,12 @@ static const char *reserved_symbols[] = {
 #define  SSID_SHARP_UNDEF         35
 #define  SSID_SHARP_INCLUDE       36
 #define  SSID_SHARP_INCLUDE_NEXT  37
-#define  SSID_TRIDOT              38
-#define  SSID_SYMBOL_X            39
-#define  SSID_DEFINED             40
-#define  SSID_VA_ARGS             41
+#define  SSID_DOUBLE_ADDITION     38
+#define  SSID_DOUBLE_SUBTRACTION  39
+#define  SSID_TRIDOT              40
+#define  SSID_SYMBOL_X            41
+#define  SSID_DEFINED             42
+#define  SSID_VA_ARGS             43
 #define  SSID_INVALID             4294967295U
 
 #endif

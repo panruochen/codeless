@@ -5,8 +5,8 @@
 #include "FileWriter.h"
 #include "ip_sc.h"
 
-extern uint8_t       gv_preprocess_mode;
-extern bool          rtm_expand_macros;
+extern uint8_t       gvar_preprocess_mode;
+extern bool          gvar_expand_macros;
 extern const char*   dv_current_file;
 extern size_t        dv_current_line;
 extern FileWriter   *gvar_file_writers[VCH_MAX];

@@ -350,21 +350,15 @@ int ReadToken(InternalTables *intab, ReadReq *req, bool for_include)
 			break;
 
 		case SM_STATE_ADDITION:
-			if(c == '+') {
-				req->error = "Invalid ++ operator";
-				goto error;
-			} else {
-				GET_OPERATOR();
-			}
+			if(c == '+')
+				cword = "++";
+			GET_OPERATOR();
 			break;
 
 		case SM_STATE_SUBTRACTION:
-			if(c == '-') {
-				req->error = "Invalid -- operator";
-				goto error;
-			} else {
-				GET_OPERATOR();
-			}
+			if(c == '-')
+				cword = "--";
+			GET_OPERATOR();
 			break;
 
 		case SM_STATE_SHARP:

@@ -214,7 +214,7 @@ int main(int argc, char *argv[])
 	if(!yctx.of_array[VCH_CL].isnull())
 		save_command_line(yctx.of_array[VCH_CL].c_str(), yctx.cc, yctx.cc_args, yctx.my_args);
 
-	if( gv_preprocess_mode ) {
+	if( gvar_preprocess_mode ) {
 		if(yctx.cc.isnull())
 			fatal(4, "--yz-cc must be specified");
 		if(yctx.cc_path.isnull()) {

@@ -1,4 +1,4 @@
-CFLAGS          := $(COMMON_CFLAGS) -ggdb -O3
+CFLAGS          := $(COMMON_CFLAGS) -ggdb ##-O3
 WD              := cl
 CFLAGS          += -Wall -Wno-unused-result #-Wno-format
 DEFINES         := -DSANITY_CHECK

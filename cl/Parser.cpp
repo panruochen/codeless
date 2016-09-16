@@ -152,7 +152,7 @@ const char *Parser::TransToken(SynToken *tokp)
 
 bool Parser::DoCalculate(SynToken& opnd1, sym_t opr, SynToken& opnd2, SynToken& result)
 {
-	if( gv_preprocess_mode ) {
+	if( gvar_preprocess_mode ) {
 		if(opnd1.attr == SynToken::TA_IDENT) {
 			opnd1.attr    = SynToken::TA_UINT;
 			opnd1.u32_val = 0;
@@ -310,7 +310,7 @@ int Parser::CheckSymbolDefined(const char *line, bool reverse, SynToken *result)
 		goto error;
 	}
 	minfo = intab->maLut.Lookup(req.token.id);
-	if( ! gv_preprocess_mode ) {
+	if( ! gvar_preprocess_mode ) {
 		if(minfo == NULL) {
 			retval = TSV_X;
 			attr   = SynToken::TA_IDENT;
@@ -335,7 +335,7 @@ error:
 		result->id      = SSID_SYMBOL_X;
 		result->name    = name;
 	}
-	if( gv_preprocess_mode )
+	if( gvar_preprocess_mode )
 		assert(retval != TSV_X);
 	return retval;
 }
@@ -361,7 +361,7 @@ int Parser::Compute(const char *line)
 	LOG_VERB dml = LOGV_DEBUG;
 	CC_STRING expansion;
 
-	if(!gv_preprocess_mode) {
+	if(!gvar_preprocess_mode) {
 		/*
 		 *  Keep `#if 0' blocks which are usually user comments.
 		 */
@@ -554,7 +554,7 @@ again:
 	}
 
 	if( opnd_stack.top().attr == SynToken::TA_IDENT ) {
-		if( gv_preprocess_mode ) {
+		if( gvar_preprocess_mode ) {
 			return TSV_0;
 		}
 		return TSV_X;
@@ -564,7 +564,7 @@ again:
 
 error:
 	log(LOGV_ERROR, "*Error* %s\n", errmsg.c_str());
-	return gv_preprocess_mode ? TSV_0 : TSV_X;
+	return gvar_preprocess_mode ? TSV_0 : TSV_X;
 }
 
 /*----------------------------------------------------------------------------------*/
@@ -913,8 +913,7 @@ bool Parser::SM_Run()
 	dv_current_file = GetCurrentFileName().c_str();
 	dv_current_line = GetCurrentLineNumber();
 
-//	GDB_TRAP2(strstr(dv_current_file,"kernel/entry_64.S"), (dv_current_line==73));
-//	GDB_TRAP2(strstr(dv_current_file,"tef6686/public.h"), (dv_current_line==46));
+//	GDB_TRAP2(strstr(dv_current_file,"makeint.h"), (dv_current_line==30));
 //	GDB_TRAP2(strstr(dv_current_file,"/usr/include/features.h"), dv_current_line==131);
 	switch(pline.pp_id) {
 	case SSID_SHARP_IF:
@@ -933,7 +932,7 @@ bool Parser::SM_Run()
 
 handle_if_branch:
 		if( result == TSV_X ) {
-			if( gv_preprocess_mode ) {
+			if( gvar_preprocess_mode ) {
 				if(errmsg.isnull())
 					errmsg = "Error on processing conditional";
 				goto done;
@@ -961,7 +960,7 @@ handle_if_branch:
 			goto done;
 		}
 		result = (TRI_STATE) Compute(pos);
-		if( gv_preprocess_mode && result == TSV_X)
+		if( gvar_preprocess_mode && result == TSV_X)
 			goto done;
 
 		/*
@@ -1030,17 +1029,19 @@ handle_if_branch:
 			break;
 		  case SSID_SHARP_INCLUDE:
 		  case SSID_SHARP_INCLUDE_NEXT:
-			if( gv_preprocess_mode )
+			if( gvar_preprocess_mode )
 				do_include(pline.pp_id, pos, &output);
 			break;
 		  default:
-			if(rtm_expand_macros) {
+			if(gvar_expand_macros) {
 				pos = pline.parsed.c_str();
 				expanded_line = ExpandLine(intab, false, pos, errmsg);
 				if(!errmsg.isnull())
 					goto error_out;
-				expanded_line += '\n';
-				output = expanded_line.c_str();
+				if(included_files.size() == 1) {
+					expanded_line += '\n';
+					output = expanded_line.c_str();
+				}
 			}
 		}
 	}
@@ -1050,7 +1051,7 @@ print_and_exit:
 		fprintf(out_fp, "%s", output);
 done:
 	pline.comment_start = -1;
-	if(gv_preprocess_mode && GetError()) {
+	if(gvar_preprocess_mode && GetError()) {
 		IncludedFile *tmp;
 		CC_STRING pmsg, ts;
 		while(included_files.size() > 0) {
@@ -1062,7 +1063,7 @@ done:
 			errmsg = pmsg + errmsg;
 		}
 	}
-	return gv_preprocess_mode ? (GetError() == NULL) : true;
+	return gvar_preprocess_mode ? (GetError() == NULL) : true;
 
 error_out:
 	return false;
@@ -1532,12 +1533,14 @@ error:
 			tmp.Format("%s:%u:  %s\n%s\n", GetCurrentFileName().c_str(), GetCurrentLineNumber(), pline.from.c_str(), GetError());
 			errmsg = tmp;
 		}
+		#if 0
 		IncludedFile *ilevel;
 		while(included_files.size() > 0) {
 			ilevel = PopIncludedFile();
 			if(infile != ilevel->ifile)
 				delete ilevel;
 		}
+		#endif
 	}
 
 	if(out_fp != NULL && out_fp != stdout)

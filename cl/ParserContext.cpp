@@ -123,7 +123,7 @@ enum {
 	COP_NO_OUTPUT,
 	COP_CC,
 	COP_CC_PATH,
-	COP_CLEANER_MODE,
+	COP_ACTION,
 	COP_IGNORE,
 	COP_SVR_ADDR,
 	COP_RTDIR,
@@ -281,8 +281,15 @@ retry:
 			save_my_args();
 			break;
 
-		case COP_CLEANER_MODE:
-			gv_preprocess_mode = false;
+		case COP_ACTION:
+			if( strcasecmp(optarg, "clean") == 0 )
+				gvar_preprocess_mode = false;
+			else if( strcasecmp(optarg, "expand-macros") == 0 )
+				gvar_expand_macros = true;
+			else {
+				errmsg.Format("Unknown --yz-action=%s", optarg);
+				goto error;
+			}
 			save_my_args();
 			break;
 
@@ -384,7 +391,7 @@ int ParserContext::get_options(int argc, char *argv[])
 		{"yz-no-output",       0, 0, COP_NO_OUTPUT },
 		{"yz-cc",              1, 0, COP_CC },
 		{"yz-cc-path",         1, 0, COP_CC_PATH },
-		{"yz-cleaner-mode",    0, 0, COP_CLEANER_MODE },
+		{"yz-action",          1, 0, COP_ACTION },
 		{"yz-ignore",          1, 0, COP_IGNORE },
 		{"yz-server-addr",     1, 0, COP_SVR_ADDR },
 		{"yz-verbose",         1, 0, COP_VERBOSE },

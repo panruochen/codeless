@@ -236,6 +236,7 @@ protected:
 		CC_STRING from;   /* The original input line */
 		CC_STRING to;     /* The processed output line */
 		int content;      /* The offset of the preprocessing contents */
+		int left_parenthesis;
 	};
 	ParsedLine pline;
 
