@@ -75,11 +75,9 @@ define more_nl
 $1
 endef
 
-exec = $(info $(call more_nl,$1))$(eval $1)
-#exec = $(eval $1)
-
+#exec = $(info $(call more_nl,$1))$(eval $1)
+exec = $(eval $1)
 info2  = $(foreach i,$1,$(info $(X)$i = $($(X)$i)))
-value2 = $(foreach i,$1,$(info $(X)$i = $(value $(X)$i)))
 
 check_vars = $(foreach i,$1,$(if $($i),$(error Variable $i has been used! $($i))))
 clean_vars = $(foreach i,$1,$(eval $i:=))
@@ -159,9 +157,6 @@ $(if $(strip $(X)),,$(error Donot set the critical variable X in your makefile o
 $(X)SRC_EXTS += $($(X)MY_C_EXTS) $($(X)MY_CPP_EXTS) $($(X)MY_ASM_EXTS)
 $(foreach i,$($(X)MY_C_EXTS) $($(X)MY_CPP_EXTS),$(eval $(X)action_$i := cc)) $(foreach i,$($(X)MY_ASM_EXTS),$(eval $(X)action_$i := as))
 
-#$(call info2,MY_ASM_EXTS)
-#$(call info2,SRC_EXTS)
-
 # Quiet commands
 $(X)quiet_cmd_cc        = @echo '  CC       $$< => $$@';
 $(X)quiet_cmd_as        = @echo '  AS       $$< => $$@';
@@ -221,7 +216,7 @@ $(X)static_pattern_rules_text +=$(call clean_vars,__local_v)
 #**************************************************************
 #  Variables
 #**************************************************************
-$(X)cmd = $(if $(strip $(V)),,$($(X)quiet_cmd_$1))$(call info2,cmd_$1)$($(X)cmd_$1)
+$(X)cmd = $(if $(strip $(V)),,$($(X)quiet_cmd_$1))$($(X)cmd_$1)
 
 $(X)cmd_cc        = $($(X)GCC) -I$$(dir $$<) $($(X)cflags) $$(CFLAGS_$$<) -c -o $$@ $$<
 $(X)cmd_as        = $(if $(strip $($(X)OVERRIDE_CMD_AS)),$(value $(X)OVERRIDE_CMD_AS),$($(X)cmd_cc))
@@ -311,7 +306,6 @@ ymt_dep_filters += %.$($(X)O).$($(X)D)
 
 ##$(X)depend_list = $(if $(strip $(not_depend_makefile_list)),,$(foreach i,$(ymt_dep_filters),$(info filter-out, $i, $(MAKEFILE_LIST))$(filter-out,$i,$(MAKEFILE_LIST)))) $($(X)EXTERNAL_DEPENDS)
 $(X)depend_list = $($(X)DEPENDENT_MAKEFILES) $($(X)EXTERNAL_DEPENDS)
-$(call info2, depend_list)
 
 #----------------------------------------------------#
 # Construct Rules
